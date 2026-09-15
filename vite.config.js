@@ -1,8 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// https://vitejs.dev/config/
+// Detecta se a compilação é do GitHub Actions (GitHub Pages) ou Vercel / Local
+const isGitHubPages = process.env.GITHUB_ACTIONS === "true";
+
 export default defineConfig({
   plugins: [react()],
-  base: "/Front-30-/",
+  base: isGitHubPages ? "/Front-30-/" : "/",
 });
