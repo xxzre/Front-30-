@@ -6,39 +6,74 @@ import {
   sendPasswordResetEmail,
   signOut,
 } from "firebase/auth";
-import { auth } from "../firebase.js";
+import { auth, firebaseConfigurado } from "../firebase.js";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [usuario, setUsuario] = useState(null);
   const [carregando, setCarregando] = useState(true);
+  const [modoDemo, setModoDemo] = useState(!firebaseConfigurado);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUsuario(u);
+    if (!auth || !firebaseConfigurado) {
       setCarregando(false);
-    });
-    return unsubscribe;
+      return;
+    }
+
+    try {
+      const unsubscribe = onAuthStateChanged(
+        auth,
+        (u) => {
+          setUsuario(u);
+          setCarregando(false);
+        },
+        (err) => {
+          console.error("Erro no AuthStateChanged:", err);
+          setCarregando(false);
+        }
+      );
+      return unsubscribe;
+    } catch (err) {
+      console.error("Erro ao assinar auth:", err);
+      setCarregando(false);
+    }
   }, []);
 
-  function entrar(email, senha) {
+  async function entrar(email, senha) {
+    if (!auth || !firebaseConfigurado) {
+      setUsuario({ email: email || "gestora@front30.com", uid: "demo-user" });
+      setModoDemo(true);
+      return;
+    }
     return signInWithEmailAndPassword(auth, email, senha);
   }
 
-  function cadastrar(email, senha) {
+  async function cadastrar(email, senha) {
+    if (!auth || !firebaseConfigurado) {
+      setUsuario({ email: email || "gestora@front30.com", uid: "demo-user" });
+      setModoDemo(true);
+      return;
+    }
     return createUserWithEmailAndPassword(auth, email, senha);
   }
 
-  function redefinirSenha(email) {
+  async function redefinirSenha(email) {
+    if (!auth || !firebaseConfigurado) {
+      return;
+    }
     return sendPasswordResetEmail(auth, email);
   }
 
-  function sair() {
+  async function sair() {
+    if (!auth || !firebaseConfigurado) {
+      setUsuario(null);
+      return;
+    }
     return signOut(auth);
   }
 
-  const valor = { usuario, carregando, entrar, cadastrar, redefinirSenha, sair };
+  const valor = { usuario, carregando, modoDemo, firebaseConfigurado, entrar, cadastrar, redefinirSenha, sair };
 
   return <AuthContext.Provider value={valor}>{children}</AuthContext.Provider>;
 }

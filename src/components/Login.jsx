@@ -18,7 +18,7 @@ function traduzirErro(erro) {
 }
 
 export default function Login() {
-  const { entrar, cadastrar, redefinirSenha } = useAuth();
+  const { entrar, cadastrar, redefinirSenha, firebaseConfigurado } = useAuth();
   const [modo, setModo] = useState("entrar"); // "entrar" | "cadastrar"
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
@@ -30,6 +30,20 @@ export default function Login() {
     e.preventDefault();
     setErro("");
     setAviso("");
+    
+    // Em modo demo (sem Firebase configurado no .env), permite login sem restrições
+    if (!firebaseConfigurado) {
+      setCarregando(true);
+      try {
+        await entrar(email || "gestora@front30.com", senha || "demo123");
+      } catch (err) {
+        setErro(traduzirErro(err));
+      } finally {
+        setCarregando(false);
+      }
+      return;
+    }
+
     if (!email || !senha) {
       setErro("Preencha e-mail e senha.");
       return;
@@ -80,6 +94,12 @@ export default function Login() {
             ? "Use o e-mail e a senha cadastrados para acessar sua rotina."
             : "Crie um acesso com e-mail e senha para começar a usar o Front 30'."}
         </p>
+
+        {!firebaseConfigurado && (
+          <div style={{ background: "#fff7ed", border: "1px solid #ffedd5", color: "#c2410c", padding: "10px 12px", borderRadius: 8, fontSize: 13, marginBottom: 14, lineHeight: 1.4 }}>
+            💡 <b>Modo Demonstração:</b> Firebase não configurado no .env. Clique em <b>Entrar</b> para visualizar o protótipo.
+          </div>
+        )}
 
         <form className="f30-form" onSubmit={enviar}>
           <label>E-mail</label>
