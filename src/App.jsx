@@ -817,7 +817,7 @@ function FormMelhoria({ colaboradores, onSalvar, onCancelar }) {
   );
 }
 
-function TelaMelhorias({ melhorias, colaboradores, onAdicionar, onConcluir }) {
+function TelaMelhorias({ melhorias, colaboradores, onAdicionar, onConcluir, onRemover }) {
   const [mostrarForm, setMostrarForm] = useState(false);
   const [resultados, setResultados] = useState({});
 
@@ -843,7 +843,19 @@ function TelaMelhorias({ melhorias, colaboradores, onAdicionar, onConcluir }) {
         <div className="f30-mel-card" key={m.id} style={{ marginBottom: 14 }}>
           <div className="f30-mel-top">
             <div style={{ fontWeight: 800, fontSize: 14.5 }}>{m.problema}</div>
-            <span className={`f30-mel-status ${m.status}`}>{m.status === "concluida" ? "CONCLUÍDA" : "EM ANDAMENTO"}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span className={`f30-mel-status ${m.status}`}>{m.status === "concluida" ? "CONCLUÍDA" : "EM ANDAMENTO"}</span>
+              {onRemover && (
+                <button
+                  type="button"
+                  className="f30-btn secundario pequeno"
+                  style={{ padding: "4px 8px", fontSize: 11, color: "var(--bad)", borderColor: "var(--bad-soft)" }}
+                  onClick={() => onRemover(m.id)}
+                >
+                  Remover
+                </button>
+              )}
+            </div>
           </div>
           <div className="f30-mel-grid">
             <div className="f30-mel-field"><label>Causa</label><p>{m.causa}</p></div>
@@ -878,9 +890,11 @@ function TelaMelhorias({ melhorias, colaboradores, onAdicionar, onConcluir }) {
   );
 }
 
-function TelaAgenda({ agenda, evolucoes, onEnviarEvolucao }) {
+function TelaAgenda({ agenda, evolucoes, onEnviarEvolucao, onAdicionarCompromisso, onRemoverCompromisso, onRemoverEvolucao }) {
   const [texto, setTexto] = useState("");
   const [periodo, setPeriodo] = useState("esta_semana");
+  const [mostrarFormAgenda, setMostrarFormAgenda] = useState(false);
+  const [novoCompromisso, setNovoCompromisso] = useState({ titulo: "", data: obterDataHojeISO(), hora: "10:00" });
 
   const agendaOrdenada = [...agenda].sort((a, b) => new Date(a.data) - new Date(b.data));
 
@@ -890,16 +904,77 @@ function TelaAgenda({ agenda, evolucoes, onEnviarEvolucao }) {
     setTexto("");
   }
 
+  function salvarCompromisso(e) {
+    e.preventDefault();
+    if (!novoCompromisso.titulo.trim()) return;
+    onAdicionarCompromisso(novoCompromisso);
+    setNovoCompromisso({ titulo: "", data: obterDataHojeISO(), hora: "10:00" });
+    setMostrarFormAgenda(false);
+  }
+
   return (
     <div className="f30-grid f30-grid-2">
       <div>
-        <div className="f30-secao-titulo">Próximos compromissos</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div className="f30-secao-titulo" style={{ margin: 0 }}>Próximos compromissos</div>
+          {onAdicionarCompromisso && (
+            <button className="f30-btn pequeno" onClick={() => setMostrarFormAgenda(!mostrarFormAgenda)}>
+              {mostrarFormAgenda ? "Fechar" : "+ Agendar"}
+            </button>
+          )}
+        </div>
+
+        {mostrarFormAgenda && (
+          <form className="f30-card f30-form" style={{ marginBottom: 14 }} onSubmit={salvarCompromisso}>
+            <label>Título do compromisso</label>
+            <input
+              type="text"
+              value={novoCompromisso.titulo}
+              onChange={(e) => setNovoCompromisso({ ...novoCompromisso, titulo: e.target.value })}
+              placeholder="Ex.: 1:1 — Renata Aquino"
+              required
+            />
+            <div className="f30-grid f30-grid-2">
+              <div>
+                <label>Data</label>
+                <input
+                  type="date"
+                  value={novoCompromisso.data}
+                  onChange={(e) => setNovoCompromisso({ ...novoCompromisso, data: e.target.value })}
+                />
+              </div>
+              <div>
+                <label>Hora</label>
+                <input
+                  type="text"
+                  value={novoCompromisso.hora}
+                  onChange={(e) => setNovoCompromisso({ ...novoCompromisso, hora: e.target.value })}
+                  placeholder="09:00"
+                />
+              </div>
+            </div>
+            <div className="f30-form-actions">
+              <button className="f30-btn pequeno" type="submit">Salvar</button>
+            </div>
+          </form>
+        )}
+
         <div className="f30-card" style={{ padding: "6px 20px" }}>
           {agendaOrdenada.length ? agendaOrdenada.map((a) => (
             <div className="f30-agenda-item" key={a.id}>
               <div className="f30-agenda-data">{formatarData(a.data)}</div>
               <div className="f30-agenda-titulo">{a.titulo}</div>
               <div className="f30-agenda-hora">{a.hora}</div>
+              {onRemoverCompromisso && (
+                <button
+                  type="button"
+                  className="f30-btn secundario pequeno"
+                  style={{ padding: "4px 8px", fontSize: 11, color: "var(--bad)", borderColor: "var(--bad-soft)", marginLeft: 6 }}
+                  onClick={() => onRemoverCompromisso(a.id)}
+                >
+                  Remover
+                </button>
+              )}
             </div>
           )) : <div className="f30-vazio">Nenhum compromisso agendado.</div>}
         </div>
@@ -923,7 +998,19 @@ function TelaAgenda({ agenda, evolucoes, onEnviarEvolucao }) {
         <div className="f30-secao-titulo" style={{ marginTop: 22 }}>Histórico enviado</div>
         {evolucoes.length ? [...evolucoes].reverse().map((e) => (
           <div className="f30-card" key={e.id} style={{ marginBottom: 10 }}>
-            <div className="f30-feed-meta">{e.periodo === "esta_semana" ? "Esta semana" : "Este mês"} · {formatarData(e.data)} · {e.status === "enviado" ? "Enviado" : "Lido"}</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <div className="f30-feed-meta" style={{ margin: 0 }}>{e.periodo === "esta_semana" ? "Esta semana" : "Este mês"} · {formatarData(e.data)} · {e.status === "enviado" ? "Enviado" : "Lido"}</div>
+              {onRemoverEvolucao && (
+                <button
+                  type="button"
+                  className="f30-btn secundario pequeno"
+                  style={{ padding: "3px 8px", fontSize: 11, color: "var(--bad)", borderColor: "var(--bad-soft)" }}
+                  onClick={() => onRemoverEvolucao(e.id)}
+                >
+                  Remover
+                </button>
+              )}
+            </div>
             <div style={{ fontSize: 13.5 }}>{e.texto}</div>
           </div>
         )) : <div className="f30-vazio">Nenhuma evolução enviada ainda.</div>}
@@ -932,7 +1019,7 @@ function TelaAgenda({ agenda, evolucoes, onEnviarEvolucao }) {
   );
 }
 
-function TelaFeedback({ colaboradores, feedbacks, onEnviarFeedback, onResponder, papel, colaboradorLogadoId }) {
+function TelaFeedback({ colaboradores, feedbacks, onEnviarFeedback, onResponder, onRemoverFeedback, papel, colaboradorLogadoId }) {
   const [colaboradorId, setColaboradorId] = useState(colaboradores[0]?.id);
   const [texto, setTexto] = useState("");
   const [respostas, setRespostas] = useState({});
@@ -979,7 +1066,19 @@ function TelaFeedback({ colaboradores, feedbacks, onEnviarFeedback, onResponder,
         </div>
         {feedbacksDoColaborador.length ? [...feedbacksDoColaborador].reverse().map((f) => (
           <div className="f30-feed-item" key={f.id}>
-            <div className="f30-feed-meta">{f.autor} · {formatarData(f.data)}</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <div className="f30-feed-meta" style={{ margin: 0 }}>{f.autor} · {formatarData(f.data)}</div>
+              {temAcessoTotal && onRemoverFeedback && (
+                <button
+                  type="button"
+                  className="f30-btn secundario pequeno"
+                  style={{ padding: "3px 8px", fontSize: 11, color: "var(--bad)", borderColor: "var(--bad-soft)" }}
+                  onClick={() => onRemoverFeedback(f.id)}
+                >
+                  Remover
+                </button>
+              )}
+            </div>
             <div className="f30-feed-texto">{f.texto}</div>
             {f.resposta ? (
               <div className="f30-feed-resposta">
@@ -1006,7 +1105,7 @@ function TelaFeedback({ colaboradores, feedbacks, onEnviarFeedback, onResponder,
   );
 }
 
-function TelaChecklistAtraso({ colaboradores, checklists, onRegistrar }) {
+function TelaChecklistAtraso({ colaboradores, checklists, onRegistrar, onRemoverAtraso }) {
   const [colaboradorId, setColaboradorId] = useState(colaboradores[0]?.id);
   const [data, setData] = useState(obterDataHojeISO());
   const [motivos, setMotivos] = useState([]);
@@ -1067,11 +1166,21 @@ function TelaChecklistAtraso({ colaboradores, checklists, onRegistrar }) {
           {listaOrdenada.length ? listaOrdenada.map((c) => (
             <div className="f30-atraso-item" key={c.id}>
               <div className="f30-agenda-data">{formatarData(c.data)}</div>
-              <div>
+              <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700, fontSize: 13.5 }}>{nomeColaborador(c.colaboradorId)}</div>
                 <div className="f30-atraso-motivos">{c.motivos.map((m) => <span className="f30-motivo-chip" key={m}>{m}</span>)}</div>
                 {c.observacao && <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 4 }}>{c.observacao}</div>}
               </div>
+              {onRemoverAtraso && (
+                <button
+                  type="button"
+                  className="f30-btn secundario pequeno"
+                  style={{ padding: "4px 8px", fontSize: 11, color: "var(--bad)", borderColor: "var(--bad-soft)" }}
+                  onClick={() => onRemoverAtraso(c.id)}
+                >
+                  Remover
+                </button>
+              )}
             </div>
           )) : <div className="f30-vazio">Nenhum atraso registrado.</div>}
         </div>
@@ -1223,6 +1332,34 @@ export default function App() {
     mostrarToast("Melhoria marcada como concluída.");
   }
 
+  function removerMelhoria(id) {
+    setMelhorias((prev) => {
+      const atualizado = prev.filter((m) => m.id !== id);
+      salvarNoFirestore({ melhorias: atualizado });
+      return atualizado;
+    });
+    mostrarToast("Registro de melhoria removido.");
+  }
+
+  function adicionarCompromisso(dados) {
+    const novo = { id: gerarId("ag"), ...dados };
+    setAgenda((prev) => {
+      const atualizado = [...prev, novo];
+      salvarNoFirestore({ agenda: atualizado });
+      return atualizado;
+    });
+    mostrarToast("Compromisso agendado.");
+  }
+
+  function removerCompromisso(id) {
+    setAgenda((prev) => {
+      const atualizado = prev.filter((a) => a.id !== id);
+      salvarNoFirestore({ agenda: atualizado });
+      return atualizado;
+    });
+    mostrarToast("Compromisso removido da agenda.");
+  }
+
   function enviarEvolucao(texto, periodo) {
     const nova = { id: gerarId("ev"), periodo, texto, data: obterDataHojeISO(), status: "enviado" };
     setEvolucoes((prev) => {
@@ -1233,6 +1370,15 @@ export default function App() {
     mostrarToast("Evolução enviada para a coordenadora.");
   }
 
+  function removerEvolucao(id) {
+    setEvolucoes((prev) => {
+      const atualizado = prev.filter((e) => e.id !== id);
+      salvarNoFirestore({ evolucoes: atualizado });
+      return atualizado;
+    });
+    mostrarToast("Registro de evolução removido.");
+  }
+
   function enviarFeedback(colaboradorId, texto) {
     const novo = { id: gerarId("f"), colaboradorId, autor: "Você (gestora)", texto, data: obterDataHojeISO(), resposta: null };
     setFeedbacks((prev) => {
@@ -1241,6 +1387,15 @@ export default function App() {
       return atualizado;
     });
     mostrarToast("Feedback enviado.");
+  }
+
+  function removerFeedback(id) {
+    setFeedbacks((prev) => {
+      const atualizado = prev.filter((f) => f.id !== id);
+      salvarNoFirestore({ feedbacks: atualizado });
+      return atualizado;
+    });
+    mostrarToast("Feedback removido.");
   }
 
   function responderFeedback(feedbackId, texto) {
@@ -1261,6 +1416,15 @@ export default function App() {
       return atualizado;
     });
     mostrarToast("Atraso registrado.");
+  }
+
+  function removerAtraso(id) {
+    setChecklists((prev) => {
+      const atualizado = prev.filter((c) => c.id !== id);
+      salvarNoFirestore({ checklists: atualizado });
+      return atualizado;
+    });
+    mostrarToast("Registro de atraso removido.");
   }
 
   const prioridadeDia = "Fechar o piloto de confirmação de endereço com o Diego antes de escalar para o resto do time.";
@@ -1350,10 +1514,25 @@ export default function App() {
         {aba === "rotina" && <TelaRotina itens={itensRotina} onAlternarStatus={alternarStatusItem} />}
 
         {aba === "melhorias" && (
-          <TelaMelhorias melhorias={melhorias} colaboradores={colaboradores} onAdicionar={adicionarMelhoria} onConcluir={concluirMelhoria} />
+          <TelaMelhorias
+            melhorias={melhorias}
+            colaboradores={colaboradores}
+            onAdicionar={adicionarMelhoria}
+            onConcluir={concluirMelhoria}
+            onRemover={removerMelhoria}
+          />
         )}
 
-        {aba === "agenda" && <TelaAgenda agenda={agenda} evolucoes={evolucoes} onEnviarEvolucao={enviarEvolucao} />}
+        {aba === "agenda" && (
+          <TelaAgenda
+            agenda={agenda}
+            evolucoes={evolucoes}
+            onEnviarEvolucao={enviarEvolucao}
+            onAdicionarCompromisso={adicionarCompromisso}
+            onRemoverCompromisso={removerCompromisso}
+            onRemoverEvolucao={removerEvolucao}
+          />
+        )}
 
         {aba === "feedback" && (
           <TelaFeedback
@@ -1361,6 +1540,7 @@ export default function App() {
             feedbacks={feedbacks}
             onEnviarFeedback={enviarFeedback}
             onResponder={responderFeedback}
+            onRemoverFeedback={removerFeedback}
             papel={papel}
             colaboradorLogadoId={colaboradorLogadoId}
           />
@@ -1368,7 +1548,12 @@ export default function App() {
 
         {aba === "checklist" && (
           papel === "gestor" || papel === "coordenador" ? (
-            <TelaChecklistAtraso colaboradores={colaboradores} checklists={checklists} onRegistrar={registrarAtraso} />
+            <TelaChecklistAtraso
+              colaboradores={colaboradores}
+              checklists={checklists}
+              onRegistrar={registrarAtraso}
+              onRemoverAtraso={removerAtraso}
+            />
           ) : (
             <div className="f30-vazio">Esta tela é exclusiva do perfil de gestão/coordenação.</div>
           )
