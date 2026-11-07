@@ -57,7 +57,7 @@ export default function Login() {
     setCarregando(true);
     try {
       if (modo === "entrar") {
-        await entrar(email, senha, perfil);
+        await entrar(email, senha);
       } else {
         const res = await cadastrar(email, senha, perfil);
         if (res?.verificacaoEnviada) {
@@ -159,12 +159,16 @@ export default function Login() {
             placeholder="••••••••"
           />
 
-          <label>Perfil de acesso</label>
-          <select value={perfil} onChange={(e) => setPerfil(e.target.value)}>
-            <option value="colaborador">Colaborador</option>
-            <option value="gestor">Gestor(a)</option>
-            <option value="coordenador">Coordenador(a) Geral</option>
-          </select>
+          {modo === "cadastrar" && (
+            <>
+              <label>Qual é o seu cargo / perfil?</label>
+              <select value={perfil} onChange={(e) => setPerfil(e.target.value)}>
+                <option value="colaborador">Colaborador</option>
+                <option value="gestor">Gestor(a)</option>
+                <option value="coordenador">Coordenador(a) Geral</option>
+              </select>
+            </>
+          )}
 
           {erro && <div className="f30-login-erro">{erro}</div>}
           {aviso && <div className="f30-login-aviso">{aviso}</div>}

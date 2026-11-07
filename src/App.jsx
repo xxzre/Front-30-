@@ -852,10 +852,9 @@ function TelaChecklistAtraso({ colaboradores, checklists, onRegistrar }) {
 /* ================================== APP ================================== */
 
 export default function App() {
-  const { usuario, perfilUsuario, setPerfilUsuario, sair } = useAuth();
+  const { usuario, perfilUsuario, sair } = useAuth();
   const [aba, setAba] = useState("inicio");
   const papel = perfilUsuario || "gestor";
-  const setPapel = setPerfilUsuario;
   const [colaboradorLogadoId, setColaboradorLogadoId] = useState("c1");
 
   const [colaboradores] = useState(COLABORADORES_INICIAIS);
@@ -1019,14 +1018,6 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div className="f30-role-switch">
-          <label>Perfil de acesso</label>
-          <select value={papel} onChange={(e) => setPapel(e.target.value)}>
-            <option value="coordenador">Coordenador(a) Geral</option>
-            <option value="gestor">Gestor(a) (acesso ao time)</option>
-            <option value="colaborador">Colaborador — Renata Aquino</option>
-          </select>
-        </div>
         <div className="f30-conta">
           <span className="f30-conta-email" title={usuario?.email}>{usuario?.email}</span>
           <button className="f30-btn secundario pequeno" onClick={sair}>Sair</button>
