@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useAuth } from "../context/AuthContext.jsx";
+import { useAuth, LISTA_SUPERVISORES_HIERARQUIA } from "../context/AuthContext.jsx";
 
 const MENSAGENS_ERRO = {
   "auth/invalid-email": "E-mail inválido. Verifique o formato digitado.",
@@ -22,9 +22,11 @@ function traduzirErro(erro) {
 export default function Login() {
   const { entrar, cadastrar, reenviarVerificacao, redefinirSenha, firebaseConfigurado } = useAuth();
   const [modo, setModo] = useState("entrar"); // "entrar" | "cadastrar"
+  const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [perfil, setPerfil] = useState("gestor"); // "colaborador" | "gestor" | "coordenador"
+  const [supervisor, setSupervisor] = useState("Jaqueline");
   const [carregando, setCarregando] = useState(false);
   const [reenviando, setReenviando] = useState(false);
   const [erro, setErro] = useState("");
@@ -40,7 +42,7 @@ export default function Login() {
     if (!firebaseConfigurado) {
       setCarregando(true);
       try {
-        await entrar(email || "gestora@front30.com", senha || "demo123", perfil);
+        await entrar(email || "gestora@front30.com", senha || "demo123");
       } catch (err) {
         setErro(traduzirErro(err));
       } finally {
@@ -59,7 +61,7 @@ export default function Login() {
       if (modo === "entrar") {
         await entrar(email, senha);
       } else {
-        const res = await cadastrar(email, senha, perfil);
+        const res = await cadastrar(email, senha, perfil, supervisor, nome.trim());
         if (res?.verificacaoEnviada) {
           setModo("entrar");
           setPrecisaVerificar(true);
@@ -132,7 +134,7 @@ export default function Login() {
         <p className="f30-login-sub">
           {modo === "entrar"
             ? "Use o e-mail e a senha cadastrados para acessar sua rotina."
-            : "Crie um acesso com e-mail e senha para começar a usar o Front 30'."}
+            : "Escolha seu nível hierárquico para configurar suas permissões de segurança."}
         </p>
 
         {!firebaseConfigurado && (
@@ -142,6 +144,19 @@ export default function Login() {
         )}
 
         <form className="f30-form" onSubmit={enviar}>
+          {modo === "cadastrar" && (
+            <>
+              <label>Nome completo</label>
+              <input
+                type="text"
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                placeholder="Seu nome completo"
+                required
+              />
+            </>
+          )}
+
           <label>E-mail</label>
           <input
             type="text"
@@ -161,12 +176,29 @@ export default function Login() {
 
           {modo === "cadastrar" && (
             <>
-              <label>Qual é o seu cargo / perfil?</label>
+              <label>Nível de acesso (Hierarquia)</label>
               <select value={perfil} onChange={(e) => setPerfil(e.target.value)}>
-                <option value="colaborador">Colaborador</option>
-                <option value="gestor">Gestor(a)</option>
-                <option value="coordenador">Coordenador(a) Geral</option>
+                <option value="colaborador">Colaborador (acesso restrito aos próprios dados)</option>
+                <option value="gestor">Supervisor(a) / Gestor(a) (acesso à sua equipe)</option>
+                <option value="coordenador">Coordenador(a) Geral (visão executiva total)</option>
               </select>
+
+              {(perfil === "gestor" || perfil === "colaborador") && (
+                <>
+                  <label>
+                    {perfil === "gestor"
+                      ? "Selecione sua identificação de Supervisor(a)"
+                      : "Qual é o seu Supervisor(a) direto?"}
+                  </label>
+                  <select value={supervisor} onChange={(e) => setSupervisor(e.target.value)}>
+                    {LISTA_SUPERVISORES_HIERARQUIA.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.nome}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
             </>
           )}
 

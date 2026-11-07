@@ -4,13 +4,15 @@ import React, { useState } from "react";
    PAINEL DA COORDENAÇÃO GERAL — ONE PAGE DASHBOARDS E CONTROLES INTERNOS
    ========================================================================= */
 
-const SUPERVISORES_DADOS = [
+export const SUPERVISORES_DADOS = [
   { id: "Amanda", nomeCompleto: "Amanda Lira", monitoriasMonitores: 23, monitoriasSupervisores: 21, metaMonitoria: 40, notaMonitores: 70, notaSupervisao: 97, reorientacoesOut: 0, escala: "08:00 às 17:00", suporteHorario: "09:00–12:00 / 14:00–16:00", ferias: "10/01/2027 a 29/01/2027", toFerias: "Aprovada", tmo: 318, tme: 42 },
   { id: "Camila", nomeCompleto: "Camila dos Reis", monitoriasMonitores: 3, monitoriasSupervisores: 13, metaMonitoria: 40, notaMonitores: 87, notaSupervisao: 98, reorientacoesOut: 2, escala: "09:00 às 18:00", suporteHorario: "10:00–13:00 / 15:00–17:00", ferias: "05/02/2027 a 24/02/2027", toFerias: "Em análise", tmo: 330, tme: 48 },
   { id: "Cristiane", nomeCompleto: "Cristiane de Souza", monitoriasMonitores: 22, monitoriasSupervisores: 18, metaMonitoria: 40, notaMonitores: 86, notaSupervisao: 98, reorientacoesOut: 2, escala: "07:00 às 16:00", suporteHorario: "08:00–11:00 / 13:00–15:00", ferias: "15/03/2027 a 03/04/2027", toFerias: "Aprovada", tmo: 342, tme: 55 },
   { id: "Julio", nomeCompleto: "Julio Ortunes", monitoriasMonitores: 25, monitoriasSupervisores: 10, metaMonitoria: 40, notaMonitores: 87, notaSupervisao: 95, reorientacoesOut: 1, escala: "10:00 às 19:00", suporteHorario: "11:00–14:00 / 16:00–18:00", ferias: "01/05/2027 a 20/05/2027", toFerias: "Pendente", tmo: 312, tme: 39 },
   { id: "Luciane", nomeCompleto: "Luciane Oliveira", monitoriasMonitores: 16, monitoriasSupervisores: 16, metaMonitoria: 40, notaMonitores: 77, notaSupervisao: 85, reorientacoesOut: 0, escala: "12:00 às 21:00", suporteHorario: "13:00–16:00 / 18:00–20:00", ferias: "12/06/2027 a 01/07/2027", toFerias: "Aprovada", tmo: 350, tme: 61 },
   { id: "Fátima", nomeCompleto: "Maria de Fátima", monitoriasMonitores: 14, monitoriasSupervisores: 16, metaMonitoria: 40, notaMonitores: 91, notaSupervisao: 98, reorientacoesOut: 0, escala: "14:00 às 23:00", suporteHorario: "15:00–18:00 / 19:30–21:30", ferias: "20/08/2027 a 08/09/2027", toFerias: "Em análise", tmo: 304, tme: 36 },
+  { id: "Jaqueline", nomeCompleto: "Jaqueline Rocha Lima", monitoriasMonitores: 21, monitoriasSupervisores: 19, metaMonitoria: 40, notaMonitores: 92, notaSupervisao: 98, reorientacoesOut: 0, escala: "08:00 às 17:00", suporteHorario: "09:30–12:30 / 14:30–16:30", ferias: "10/09/2027 a 29/09/2027", toFerias: "Aprovada", tmo: 310, tme: 38 },
+  { id: "Luciana Faiad", nomeCompleto: "Luciana Faiad Labate", monitoriasMonitores: 20, monitoriasSupervisores: 20, metaMonitoria: 40, notaMonitores: 94, notaSupervisao: 99, reorientacoesOut: 0, escala: "10:00 às 19:00", suporteHorario: "11:00–14:00 / 16:00–18:00", ferias: "04/10/2027 a 23/10/2027", toFerias: "Aprovada", tmo: 298, tme: 35 },
 ];
 
 const OPERADORES_ATUAIS = [
@@ -19,12 +21,16 @@ const OPERADORES_ATUAIS = [
   { nome: "MARCIA MARTINS DA SILVA", sup: "Cristiane", nota: 100, q: "Q1" },
   { nome: "MARIA MARCIA DA COSTA SANTOS", sup: "Julio", nota: 100, q: "Q1" },
   { nome: "WANIA IZABEL DA CRUZ", sup: "Fátima", nota: 100, q: "Q1" },
+  { nome: "PATRICIA MENDONCA ROCHA", sup: "Jaqueline", nota: 100, q: "Q1" },
+  { nome: "BEATRIZ LABATE NOGUEIRA", sup: "Luciana Faiad", nota: 99, q: "Q1" },
   { nome: "JONATHAN PEREIRA DE ANDRADE", sup: "Amanda", nota: 98, q: "Q1" },
   { nome: "RAQUEL MOREIRA DA SILVA", sup: "Camila", nota: 98, q: "Q1" },
   { nome: "EDILENE DAIANE DA SILVA LIBARINO", sup: "Cristiane", nota: 96, q: "Q1" },
   { nome: "ADRIANO HENRIQUE DA SILVA", sup: "Julio", nota: 95, q: "Q1" },
   { nome: "FERNANDA DE CARVALHO", sup: "Luciane", nota: 95, q: "Q1" },
   { nome: "ROGERIO DE ANDRADE LIMA", sup: "Fátima", nota: 95, q: "Q1" },
+  { nome: "LUCAS ROCHA FERREIRA", sup: "Jaqueline", nota: 94, q: "Q2" },
+  { nome: "CAROLINA FAIAD MARTINS", sup: "Luciana Faiad", nota: 93, q: "Q2" },
   { nome: "GISELE COCUZZI", sup: "Amanda", nota: 94, q: "Q2" },
   { nome: "JAQUELINE SOUZA DE JESUS", sup: "Camila", nota: 94, q: "Q2" },
   { nome: "ALESSANDRA ALVES MOREIRA", sup: "Cristiane", nota: 93, q: "Q2" },

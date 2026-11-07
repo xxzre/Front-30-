@@ -12,33 +12,61 @@ import { auth, db, firebaseConfigurado } from "../firebase.js";
 
 const AuthContext = createContext(null);
 
+export const LISTA_SUPERVISORES_HIERARQUIA = [
+  { id: "Amanda", nome: "Amanda Lira" },
+  { id: "Camila", nome: "Camila dos Reis" },
+  { id: "Cristiane", nome: "Cristiane de Souza" },
+  { id: "Julio", nome: "Julio Ortunes" },
+  { id: "Luciane", nome: "Luciane Oliveira" },
+  { id: "Fátima", nome: "Maria de Fátima" },
+  { id: "Jaqueline", nome: "Jaqueline Rocha Lima" },
+  { id: "Luciana Faiad", nome: "Luciana Faiad Labate" },
+];
+
 export function AuthProvider({ children }) {
   const [usuario, setUsuario] = useState(null);
   const [perfilUsuario, setPerfilUsuario] = useState("gestor"); // "colaborador" | "gestor" | "coordenador"
+  const [supervisorVinculado, setSupervisorVinculado] = useState("Amanda");
+  const [nomeUsuario, setNomeUsuario] = useState("");
   const [carregando, setCarregando] = useState(true);
   const [modoDemo, setModoDemo] = useState(!firebaseConfigurado);
 
-  async function carregarPerfilFirestore(uid, perfilFallback) {
-    const salvoLocal = localStorage.getItem(`f30_perfil_${uid}`);
-    const padrao = perfilFallback || salvoLocal || "gestor";
-    setPerfilUsuario(padrao);
+  async function carregarPerfilFirestore(uid, dadosFallback = {}) {
+    const salvoPerfil = localStorage.getItem(`f30_perfil_${uid}`);
+    const salvoSup = localStorage.getItem(`f30_sup_${uid}`);
+    const salvoNome = localStorage.getItem(`f30_nome_${uid}`);
 
-    if (!db) return padrao;
+    const padraoPerfil = dadosFallback.perfil || salvoPerfil || "gestor";
+    const padraoSup = dadosFallback.supervisor || salvoSup || "Amanda";
+    const padraoNome = dadosFallback.nome || salvoNome || "";
+
+    setPerfilUsuario(padraoPerfil);
+    setSupervisorVinculado(padraoSup);
+    setNomeUsuario(padraoNome);
+
+    if (!db) return padraoPerfil;
     try {
       const snap = await getDoc(doc(db, "usuarios", uid));
-      if (snap.exists() && snap.data()?.perfil) {
-        const p = snap.data().perfil;
-        setPerfilUsuario(p);
-        localStorage.setItem(`f30_perfil_${uid}`, p);
-        return p;
-      } else if (perfilFallback) {
-        await setDoc(doc(db, "usuarios", uid), { perfil: perfilFallback, emailVerificado: true }, { merge: true });
-        localStorage.setItem(`f30_perfil_${uid}`, perfilFallback);
+      if (snap.exists()) {
+        const d = snap.data();
+        if (d.perfil) {
+          setPerfilUsuario(d.perfil);
+          localStorage.setItem(`f30_perfil_${uid}`, d.perfil);
+        }
+        if (d.supervisorVinculado) {
+          setSupervisorVinculado(d.supervisorVinculado);
+          localStorage.setItem(`f30_sup_${uid}`, d.supervisorVinculado);
+        }
+        if (d.nome) {
+          setNomeUsuario(d.nome);
+          localStorage.setItem(`f30_nome_${uid}`, d.nome);
+        }
+        return d.perfil || padraoPerfil;
       }
     } catch (e) {
       console.warn("Aviso ao ler perfil do usuário:", e);
     }
-    return padrao;
+    return padraoPerfil;
   }
 
   useEffect(() => {
@@ -82,15 +110,16 @@ export function AuthProvider({ children }) {
   }, []);
 
   /**
-   * 1. Fluxo de Cadastro:
-   * - Cria o usuário via createUserWithEmailAndPassword
-   * - Salva o cargo/perfil escolhido (colaborador, gestor ou coordenador) em /usuarios/{uid}
-   * - Dispara imediatamente sendEmailVerification(user)
+   * 1. Fluxo de Cadastro com Hierarquia e Isolamento de Dados:
+   * - Salva cargo/perfil ("colaborador", "gestor", "coordenador"), nome e supervisorVinculado em /usuarios/{uid}
+   * - Dispara sendEmailVerification(user)
    * - Desloga temporariamente com signOut(auth)
    */
-  async function cadastrar(email, senha, perfilEscolhido = "gestor") {
+  async function cadastrar(email, senha, perfilEscolhido = "gestor", supervisorEscolhido = "Amanda", nomeCompleto = "") {
     if (!auth || !firebaseConfigurado) {
       setPerfilUsuario(perfilEscolhido);
+      setSupervisorVinculado(supervisorEscolhido);
+      setNomeUsuario(nomeCompleto);
       setUsuario({ email: email || "gestora@front30.com", uid: "demo-user", emailVerified: true });
       setModoDemo(true);
       return { verificacaoEnviada: false };
@@ -100,13 +129,17 @@ export function AuthProvider({ children }) {
     const user = credencial.user;
 
     localStorage.setItem(`f30_perfil_${user.uid}`, perfilEscolhido);
+    localStorage.setItem(`f30_sup_${user.uid}`, supervisorEscolhido);
+    localStorage.setItem(`f30_nome_${user.uid}`, nomeCompleto);
 
     if (db) {
       try {
         await setDoc(doc(db, "usuarios", user.uid), {
           uid: user.uid,
           email: user.email,
+          nome: nomeCompleto,
           perfil: perfilEscolhido,
+          supervisorVinculado: supervisorEscolhido,
           criadoEm: serverTimestamp(),
           emailVerificado: false,
         });
@@ -123,14 +156,12 @@ export function AuthProvider({ children }) {
   }
 
   /**
-   * 2. Fluxo de Login:
-   * - Faz login via signInWithEmailAndPassword
-   * - Executa obrigatoriamente await user.reload()
-   * - Verifica user.emailVerified
+   * 2. Fluxo de Login Seguro:
+   * - Executa await user.reload() e verifica user.emailVerified
+   * - Carrega estritamente o nível hierárquico do usuário autenticado
    */
-  async function entrar(email, senha, perfilEscolhido) {
+  async function entrar(email, senha) {
     if (!auth || !firebaseConfigurado) {
-      setPerfilUsuario(perfilEscolhido || "gestor");
       setUsuario({ email: email || "gestora@front30.com", uid: "demo-user", emailVerified: true });
       setModoDemo(true);
       return { emailVerified: true };
@@ -150,7 +181,7 @@ export function AuthProvider({ children }) {
     }
 
     await user.getIdToken(true);
-    await carregarPerfilFirestore(user.uid, perfilEscolhido);
+    await carregarPerfilFirestore(user.uid);
     setUsuario(auth.currentUser);
     return { emailVerified: true, user: auth.currentUser };
   }
@@ -192,7 +223,8 @@ export function AuthProvider({ children }) {
   const valor = {
     usuario,
     perfilUsuario,
-    setPerfilUsuario,
+    supervisorVinculado,
+    nomeUsuario,
     carregando,
     modoDemo,
     firebaseConfigurado,

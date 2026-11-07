@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "./firebase.js";
-import { useAuth } from "./context/AuthContext.jsx";
+import { useAuth, LISTA_SUPERVISORES_HIERARQUIA } from "./context/AuthContext.jsx";
 import PainelCoordenadora from "./components/PainelCoordenadora.jsx";
 
 /* =========================================================================
@@ -15,6 +15,7 @@ const COLABORADORES_INICIAIS = [
     id: "c1",
     nome: "Renata Aquino",
     cargo: "Atendente de Relacionamento Sênior",
+    supervisor: "Amanda",
     iniciais: "RA",
     pontosFortes: ["Empatia em casos sensíveis", "Domínio de remarcações"],
     focoDesenvolvimento: "Reduzir tempo médio em chamadas de reembolso",
@@ -27,6 +28,7 @@ const COLABORADORES_INICIAIS = [
     id: "c2",
     nome: "Diego Farias",
     cargo: "Atendente de Relacionamento",
+    supervisor: "Jaqueline",
     iniciais: "DF",
     pontosFortes: ["Agilidade", "Boa escuta ativa"],
     focoDesenvolvimento: "Aumentar first call resolution em bagagem extraviada",
@@ -39,6 +41,7 @@ const COLABORADORES_INICIAIS = [
     id: "c3",
     nome: "Juliana Prado",
     cargo: "Atendente de Relacionamento Pleno",
+    supervisor: "Luciana Faiad",
     iniciais: "JP",
     pontosFortes: ["Consistência", "Referência em qualidade"],
     focoDesenvolvimento: "Assumir mentoria de novatos",
@@ -51,6 +54,7 @@ const COLABORADORES_INICIAIS = [
     id: "c4",
     nome: "Marcos Vidal",
     cargo: "Atendente de Relacionamento",
+    supervisor: "Cristiane",
     iniciais: "MV",
     pontosFortes: ["Simpatia com passageiros difíceis"],
     focoDesenvolvimento: "Reduzir TMO em atendimentos de check-in",
@@ -63,6 +67,7 @@ const COLABORADORES_INICIAIS = [
     id: "c5",
     nome: "Camila Torres",
     cargo: "Atendente de Relacionamento Pleno",
+    supervisor: "Camila",
     iniciais: "CT",
     pontosFortes: ["Organização", "Registro impecável de ocorrências"],
     focoDesenvolvimento: "Ganhar confiança para negociar exceções",
@@ -418,7 +423,9 @@ function CardColaborador({ colaborador, onAbrir, onRemover }) {
         <div className="f30-colab-top">
           <div>
             <div className="f30-colab-nome">{colaborador.nome}</div>
-            <div className="f30-colab-cargo">{colaborador.cargo}</div>
+            <div className="f30-colab-cargo">
+              {colaborador.cargo} · <span style={{ color: "#EA580C", fontWeight: 700 }}>Sup: {colaborador.supervisor || "Jaqueline"}</span>
+            </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             {colaborador.emAcompanhamento && <span className="f30-badge-acomp">ACOMPANHAMENTO</span>}
@@ -566,10 +573,11 @@ function PainelColaborador({ colaborador, feedbacks, checklists, reconhecimentos
   );
 }
 
-function FormColaborador({ onSalvar, onCancelar }) {
+function FormColaborador({ onSalvar, onCancelar, papel, supervisorPadrao }) {
   const [form, setForm] = useState({
     nome: "",
     cargo: "Atendente de Relacionamento",
+    supervisor: supervisorPadrao && supervisorPadrao !== "todas" ? supervisorPadrao : "Jaqueline",
     pontosFortes: "",
     focoDesenvolvimento: "",
     tmo: 320,
@@ -598,6 +606,7 @@ function FormColaborador({ onSalvar, onCancelar }) {
       id: gerarId("c"),
       nome: form.nome.trim(),
       cargo: form.cargo.trim() || "Atendente de Relacionamento",
+      supervisor: papel === "gestor" && supervisorPadrao ? supervisorPadrao : form.supervisor,
       iniciais,
       pontosFortes: form.pontosFortes
         ? form.pontosFortes.split(",").map((s) => s.trim()).filter(Boolean)
@@ -624,7 +633,7 @@ function FormColaborador({ onSalvar, onCancelar }) {
   return (
     <form className="f30-card f30-form" style={{ marginBottom: 18 }} onSubmit={enviar}>
       <div className="f30-secao-titulo">Adicionar novo colaborador</div>
-      <div className="f30-grid f30-grid-2">
+      <div className="f30-grid f30-grid-3">
         <div>
           <label>Nome completo</label>
           <input
@@ -643,6 +652,22 @@ function FormColaborador({ onSalvar, onCancelar }) {
             onChange={(e) => atualizar("cargo", e.target.value)}
             placeholder="Ex.: Atendente de Relacionamento"
           />
+        </div>
+        <div>
+          <label>Supervisor(a) Responsável</label>
+          {papel === "coordenador" ? (
+            <select value={form.supervisor} onChange={(e) => atualizar("supervisor", e.target.value)}>
+              {LISTA_SUPERVISORES_HIERARQUIA.map((sup) => (
+                <option key={sup.id} value={sup.id}>{sup.nome}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              type="text"
+              value={LISTA_SUPERVISORES_HIERARQUIA.find((s) => s.id === supervisorPadrao)?.nome || supervisorPadrao || "Sua Equipe"}
+              disabled
+            />
+          )}
         </div>
       </div>
 
@@ -722,7 +747,7 @@ function FormColaborador({ onSalvar, onCancelar }) {
   );
 }
 
-function TelaTime({ colaboradores, feedbacks, checklists, reconhecimentos, onAdicionarColaborador, onRemoverColaborador }) {
+function TelaTime({ colaboradores, feedbacks, checklists, reconhecimentos, onAdicionarColaborador, onRemoverColaborador, papel, supervisorPadrao }) {
   const [selecionado, setSelecionado] = useState(null);
   const [mostrarForm, setMostrarForm] = useState(false);
 
@@ -730,7 +755,9 @@ function TelaTime({ colaboradores, feedbacks, checklists, reconhecimentos, onAdi
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div style={{ fontSize: 13, color: "var(--ink-soft)" }}>
-          Gerencie os integrantes da sua equipe ({colaboradores.length} colaboradores ativos).
+          {papel === "coordenador"
+            ? `Visão consolidada de todas as equipes (${colaboradores.length} colaboradores ativos).`
+            : `Gerencie os integrantes exclusivos da sua supervisão (${colaboradores.length} colaboradores ativos).`}
         </div>
         <button className="f30-btn" onClick={() => setMostrarForm(!mostrarForm)}>
           {mostrarForm ? "Fechar formulário" : "+ Adicionar colaborador"}
@@ -739,6 +766,8 @@ function TelaTime({ colaboradores, feedbacks, checklists, reconhecimentos, onAdi
 
       {mostrarForm && (
         <FormColaborador
+          papel={papel}
+          supervisorPadrao={supervisorPadrao}
           onCancelar={() => setMostrarForm(false)}
           onSalvar={(novo) => {
             onAdicionarColaborador(novo);
@@ -1195,10 +1224,16 @@ function TelaChecklistAtraso({ colaboradores, checklists, onRegistrar, onRemover
 /* ================================== APP ================================== */
 
 export default function App() {
-  const { usuario, perfilUsuario, sair } = useAuth();
-  const [aba, setAba] = useState("inicio");
+  const { usuario, perfilUsuario, supervisorVinculado, nomeUsuario, sair } = useAuth();
   const papel = perfilUsuario || "gestor";
-  const [colaboradorLogadoId, setColaboradorLogadoId] = useState("c1");
+  const supervisorAtivo =
+    papel === "coordenador"
+      ? "todas"
+      : supervisorVinculado && supervisorVinculado !== "todas"
+      ? supervisorVinculado
+      : "Jaqueline";
+
+  const [aba, setAba] = useState(papel === "coordenador" ? "coordenacao" : "inicio");
 
   const [colaboradores, setColaboradores] = useState(COLABORADORES_INICIAIS);
   const [itensRotina, setItensRotina] = useState(ITENS_ROTINA_INICIAIS);
@@ -1211,6 +1246,108 @@ export default function App() {
   const [analise, setAnalise] = useState(null);
   const [toast, setToast] = useState(null);
   const [firestoreOnline, setFirestoreOnline] = useState(false);
+
+  // Separação estrita de abas por Nível Hierárquico (Coordenador vs Supervisor vs Colaborador)
+  const abasVisiveis = useMemo(() => {
+    if (papel === "coordenador") {
+      // Nível 1 (Coordenador Geral): Acesso exclusivo à aba Coordenação + visão consolidada
+      return [
+        { id: "coordenacao", rotulo: "Coordenação (One Page)" },
+        { id: "inicio", rotulo: "Visão Geral" },
+        { id: "time", rotulo: "Todas as Equipes" },
+        { id: "melhorias", rotulo: "Melhorias (Geral)" },
+        { id: "agenda", rotulo: "Agenda & Evoluções" },
+        { id: "feedback", rotulo: "Feedbacks" },
+        { id: "checklist", rotulo: "Checklist de Atraso" },
+      ];
+    }
+    if (papel === "gestor") {
+      // Nível 2 (Supervisor): NÃO vê a aba da Coordenadora; vê apenas a gestão da sua própria equipe
+      return [
+        { id: "inicio", rotulo: "Início (Minha Equipe)" },
+        { id: "time", rotulo: "Meu Time" },
+        { id: "rotina", rotulo: "Minha Rotina" },
+        { id: "melhorias", rotulo: "Melhorias" },
+        { id: "agenda", rotulo: "Agenda" },
+        { id: "feedback", rotulo: "Feedback" },
+        { id: "checklist", rotulo: "Checklist de Atraso" },
+      ];
+    }
+    // Nível 3 (Colaborador): Isolamento total — vê apenas seus próprios indicadores, rotina e feedbacks
+    return [
+      { id: "inicio", rotulo: "Meu Desempenho" },
+      { id: "rotina", rotulo: "Minha Rotina" },
+      { id: "feedback", rotulo: "Meus Feedbacks" },
+    ];
+  }, [papel]);
+
+  // Garante que ao logar com determinado nível hierárquico, a aba ativa seja sempre permitida
+  useEffect(() => {
+    if (!abasVisiveis.some((a) => a.id === aba)) {
+      setAba(papel === "coordenador" ? "coordenacao" : "inicio");
+    }
+  }, [papel, abasVisiveis, aba]);
+
+  // Identifica o colaborador logado (para isolamento de dados no Nível 3)
+  const colaboradorLogadoEfetivoId = useMemo(() => {
+    if (nomeUsuario) {
+      const encontrado = colaboradores.find(
+        (c) => c.nome.toLowerCase() === nomeUsuario.trim().toLowerCase()
+      );
+      if (encontrado) return encontrado.id;
+    }
+    const doSupervisor = colaboradores.find((c) => (c.supervisor || "Jaqueline") === supervisorAtivo);
+    return doSupervisor?.id || colaboradores[0]?.id || "c1";
+  }, [colaboradores, nomeUsuario, supervisorAtivo]);
+
+  // Isolamento de Segurança por Hierarquia (impede vazamento de dados entre supervisores e colaboradores)
+  const colaboradoresVisiveis = useMemo(() => {
+    const normalizados = colaboradores.map((c, idx) => ({
+      ...c,
+      supervisor: c.supervisor || COLABORADORES_INICIAIS[idx]?.supervisor || "Jaqueline",
+    }));
+    if (papel === "coordenador") {
+      return normalizados;
+    }
+    if (papel === "gestor") {
+      const filtrados = normalizados.filter((c) => c.supervisor === supervisorAtivo);
+      return filtrados.length > 0 ? filtrados : normalizados.slice(0, 2).map((c) => ({ ...c, supervisor: supervisorAtivo }));
+    }
+    // Colaborador vê estritamente apenas a si mesmo
+    return normalizados.filter((c) => c.id === colaboradorLogadoEfetivoId);
+  }, [colaboradores, papel, supervisorAtivo, colaboradorLogadoEfetivoId]);
+
+  const idsColaboradoresVisiveis = useMemo(
+    () => new Set(colaboradoresVisiveis.map((c) => c.id)),
+    [colaboradoresVisiveis]
+  );
+
+  const nomesColaboradoresVisiveis = useMemo(
+    () => new Set(colaboradoresVisiveis.map((c) => c.nome)),
+    [colaboradoresVisiveis]
+  );
+
+  const feedbacksVisiveis = useMemo(() => {
+    if (papel === "coordenador") return feedbacks;
+    return feedbacks.filter((f) => idsColaboradoresVisiveis.has(f.colaboradorId));
+  }, [feedbacks, papel, idsColaboradoresVisiveis]);
+
+  const checklistsVisiveis = useMemo(() => {
+    if (papel === "coordenador") return checklists;
+    return checklists.filter((c) => idsColaboradoresVisiveis.has(c.colaboradorId));
+  }, [checklists, papel, idsColaboradoresVisiveis]);
+
+  const reconhecimentosVisiveis = useMemo(() => {
+    if (papel === "coordenador") return reconhecimentos;
+    return reconhecimentos.filter((r) => idsColaboradoresVisiveis.has(r.colaboradorId));
+  }, [reconhecimentos, papel, idsColaboradoresVisiveis]);
+
+  const melhoriasVisiveis = useMemo(() => {
+    if (papel === "coordenador") return melhorias;
+    return melhorias.filter(
+      (m) => m.supervisor === supervisorAtivo || nomesColaboradoresVisiveis.has(m.responsavel)
+    );
+  }, [melhorias, papel, supervisorAtivo, nomesColaboradoresVisiveis]);
 
   // Sincronização em tempo real com o Firestore
   useEffect(() => {
@@ -1312,6 +1449,7 @@ export default function App() {
       causa: form.causa,
       acao: form.acao,
       responsavel: form.responsavel,
+      supervisor: supervisorAtivo,
       prazo: form.prazo || obterDataHojeISO(),
       resultado: "",
       aprendizado: "",
@@ -1345,7 +1483,7 @@ export default function App() {
   }
 
   function adicionarCompromisso(dados) {
-    const novo = { id: gerarId("ag"), ...dados };
+    const novo = { id: gerarId("ag"), supervisor: supervisorAtivo, ...dados };
     setAgenda((prev) => {
       const atualizado = [...prev, novo];
       salvarNoFirestore({ agenda: atualizado });
@@ -1364,7 +1502,15 @@ export default function App() {
   }
 
   function enviarEvolucao(texto, periodo) {
-    const nova = { id: gerarId("ev"), periodo, texto, data: obterDataHojeISO(), status: "enviado" };
+    const nova = {
+      id: gerarId("ev"),
+      periodo,
+      texto,
+      supervisor: supervisorAtivo,
+      autor: nomeUsuario || supervisorAtivo,
+      data: obterDataHojeISO(),
+      status: "enviado",
+    };
     setEvolucoes((prev) => {
       const atualizado = [...prev, nova];
       salvarNoFirestore({ evolucoes: atualizado });
@@ -1383,7 +1529,12 @@ export default function App() {
   }
 
   function enviarFeedback(colaboradorId, texto) {
-    const novo = { id: gerarId("f"), colaboradorId, autor: "Você (gestora)", texto, data: obterDataHojeISO(), resposta: null };
+    const autorLabel = nomeUsuario
+      ? `${nomeUsuario} (${papel === "coordenador" ? "Coordenação" : "Supervisão"})`
+      : papel === "coordenador"
+      ? "Coordenação Geral"
+      : `Supervisão (${supervisorAtivo})`;
+    const novo = { id: gerarId("f"), colaboradorId, autor: autorLabel, texto, data: obterDataHojeISO(), resposta: null };
     setFeedbacks((prev) => {
       const atualizado = [...prev, novo];
       salvarNoFirestore({ feedbacks: atualizado });
@@ -1402,9 +1553,13 @@ export default function App() {
   }
 
   function responderFeedback(feedbackId, texto) {
-    const colab = colaboradores.find((c) => c.id === colaboradorLogadoId);
+    const colab = colaboradores.find((c) => c.id === colaboradorLogadoEfetivoId);
     setFeedbacks((prev) => {
-      const atualizado = prev.map((f) => (f.id === feedbackId ? { ...f, resposta: { texto, autor: colab?.nome || "Colaborador", data: obterDataHojeISO() } } : f));
+      const atualizado = prev.map((f) =>
+        f.id === feedbackId
+          ? { ...f, resposta: { texto, autor: nomeUsuario || colab?.nome || "Colaborador", data: obterDataHojeISO() } }
+          : f
+      );
       salvarNoFirestore({ feedbacks: atualizado });
       return atualizado;
     });
@@ -1412,7 +1567,7 @@ export default function App() {
   }
 
   function registrarAtraso(dados) {
-    const novo = { id: gerarId("ch"), ...dados };
+    const novo = { id: gerarId("ch"), supervisor: supervisorAtivo, ...dados };
     setChecklists((prev) => {
       const atualizado = [...prev, novo];
       salvarNoFirestore({ checklists: atualizado });
@@ -1430,7 +1585,15 @@ export default function App() {
     mostrarToast("Registro de atraso removido.");
   }
 
-  const prioridadeDia = "Fechar o piloto de confirmação de endereço com o Diego antes de escalar para o resto do time.";
+  const prioridadeDia =
+    papel === "coordenador"
+      ? "Acompanhar consolidado das 8 supervisões (Amanda, Camila, Cristiane, Julio, Luciane, Fátima, Jaqueline Rocha Lima e Luciana Faiad Labate)."
+      : papel === "gestor"
+      ? `Foco da Supervisão (${supervisorAtivo}): acompanhar indicadores de qualidade, TMO e feedbacks pendentes exclusivamente da sua equipe.`
+      : "Acompanhar seus indicadores individuais do dia, responder feedbacks e concluir itens da sua rotina.";
+
+  const nomeSupervisorExibicao =
+    LISTA_SUPERVISORES_HIERARQUIA.find((s) => s.id === supervisorAtivo)?.nome || supervisorAtivo;
 
   return (
     <div className="f30-app">
@@ -1442,8 +1605,55 @@ export default function App() {
             <span>rotina de liderança</span>
           </div>
         </div>
+
+        {/* Selo de Segurança e Nível Hierárquico (somente leitura) */}
+        <div
+          style={{
+            margin: "0 4px 12px",
+            padding: "8px 10px",
+            borderRadius: 10,
+            background:
+              papel === "coordenador"
+                ? "#FFF7ED"
+                : papel === "gestor"
+                ? "#EFF6FF"
+                : "#F0FDF4",
+            border:
+              papel === "coordenador"
+                ? "1px solid #FDBA74"
+                : papel === "gestor"
+                ? "1px solid #BFDBFE"
+                : "1px solid #BBF7D0",
+            fontSize: 11,
+            lineHeight: 1.35,
+          }}
+        >
+          <div
+            style={{
+              fontWeight: 800,
+              color:
+                papel === "coordenador"
+                  ? "#C2410C"
+                  : papel === "gestor"
+                  ? "#1D4ED8"
+                  : "#15803D",
+            }}
+          >
+            {papel === "coordenador"
+              ? "🔒 NÍVEL 1 · COORDENAÇÃO GERAL"
+              : papel === "gestor"
+              ? "🔒 NÍVEL 2 · SUPERVISÃO"
+              : "🔒 NÍVEL 3 · COLABORADOR(A)"}
+          </div>
+          <div style={{ color: "#475569", marginTop: 2, fontWeight: 600 }}>
+            {papel === "coordenador"
+              ? "Acesso Consolidado (8 Equipes)"
+              : `Equipe: ${nomeSupervisorExibicao}`}
+          </div>
+        </div>
+
         <nav className="f30-nav">
-          {ABAS.map((a) => (
+          {abasVisiveis.map((a) => (
             <button key={a.id} className={`f30-nav-item ${aba === a.id ? "ativo" : ""}`} onClick={() => setAba(a.id)}>
               <svg width="18" height="18" viewBox="0 0 24 24">{ICONES_NAV[a.id]}</svg>
               {a.rotulo}
@@ -1451,7 +1661,7 @@ export default function App() {
           ))}
         </nav>
         <div className="f30-conta">
-          <span className="f30-conta-email" title={usuario?.email}>{usuario?.email}</span>
+          <span className="f30-conta-email" title={usuario?.email}>{nomeUsuario || usuario?.email}</span>
           <button className="f30-btn secundario pequeno" onClick={sair}>Sair</button>
         </div>
       </aside>
@@ -1459,13 +1669,13 @@ export default function App() {
       <main className="f30-main">
         <div className="f30-header">
           <div>
-            <h1>{ABAS.find((a) => a.id === aba)?.rotulo}</h1>
+            <h1>{abasVisiveis.find((a) => a.id === aba)?.rotulo || ABAS.find((a) => a.id === aba)?.rotulo}</h1>
             <p>
               {papel === "coordenador"
-                ? "Visão da coordenação geral — acompanhamento estratégico e acesso total"
+                ? "Visão exclusiva da Coordenação Geral — acesso estratégico às 8 supervisões (incluindo Jaqueline Rocha Lima e Luciana Faiad Labate)"
                 : papel === "gestor"
-                ? "Visão da gestora — acesso completo ao time"
-                : "Visão do colaborador — apenas seus próprios dados"}
+                ? `Visão isolada de Supervisão (${nomeSupervisorExibicao}) — acesso restrito aos dados da sua equipe`
+                : `Visão individual do Colaborador (Equipe ${nomeSupervisorExibicao}) — acesso restrito aos seus próprios dados`}
             </p>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1489,10 +1699,10 @@ export default function App() {
 
         {aba === "inicio" && (
           <TelaInicio
-            colaboradores={colaboradores}
-            melhorias={melhorias}
+            colaboradores={colaboradoresVisiveis}
+            melhorias={melhoriasVisiveis}
             evolucoes={evolucoes}
-            reconhecimentos={reconhecimentos}
+            reconhecimentos={reconhecimentosVisiveis}
             prioridadeDia={prioridadeDia}
             analise={analise}
             setAnalise={setAnalise}
@@ -1500,73 +1710,85 @@ export default function App() {
         )}
 
         {aba === "coordenacao" && (
-          papel === "coordenador" || papel === "gestor" ? (
+          papel === "coordenador" ? (
             <PainelCoordenadora melhorias={melhorias} feedbacks={feedbacks} checklists={checklists} />
           ) : (
-            <div className="f30-vazio">Esta aba de dashboards executivos é exclusiva da Coordenação e Gestão.</div>
+            <div className="f30-vazio">
+              🔒 Acesso Restrito: O Painel Executivo One Page é exclusivo do nível de Coordenação Geral para evitar vazamento de dados entre equipes.
+            </div>
           )
         )}
 
         {aba === "time" && (
           papel === "gestor" || papel === "coordenador" ? (
             <TelaTime
-              colaboradores={colaboradores}
-              feedbacks={feedbacks}
-              checklists={checklists}
-              reconhecimentos={reconhecimentos}
+              colaboradores={colaboradoresVisiveis}
+              feedbacks={feedbacksVisiveis}
+              checklists={checklistsVisiveis}
+              reconhecimentos={reconhecimentosVisiveis}
               onAdicionarColaborador={adicionarColaborador}
               onRemoverColaborador={removerColaborador}
+              papel={papel}
+              supervisorPadrao={supervisorAtivo}
             />
           ) : (
-            <div className="f30-vazio">Esta tela é exclusiva do perfil de gestão/coordenação. Veja seus dados em Feedback e Checklist de Atraso.</div>
+            <div className="f30-vazio">🔒 Acesso Restrito: Esta tela é exclusiva dos níveis de Supervisão e Coordenação.</div>
           )
         )}
 
         {aba === "rotina" && <TelaRotina itens={itensRotina} onAlternarStatus={alternarStatusItem} />}
 
         {aba === "melhorias" && (
-          <TelaMelhorias
-            melhorias={melhorias}
-            colaboradores={colaboradores}
-            onAdicionar={adicionarMelhoria}
-            onConcluir={concluirMelhoria}
-            onRemover={removerMelhoria}
-          />
+          papel === "gestor" || papel === "coordenador" ? (
+            <TelaMelhorias
+              melhorias={melhoriasVisiveis}
+              colaboradores={colaboradoresVisiveis}
+              onAdicionar={adicionarMelhoria}
+              onConcluir={concluirMelhoria}
+              onRemover={removerMelhoria}
+            />
+          ) : (
+            <div className="f30-vazio">🔒 Acesso Restrito: O gerenciamento de melhorias é exclusivo da Supervisão e Coordenação.</div>
+          )
         )}
 
         {aba === "agenda" && (
-          <TelaAgenda
-            agenda={agenda}
-            evolucoes={evolucoes}
-            onEnviarEvolucao={enviarEvolucao}
-            onAdicionarCompromisso={adicionarCompromisso}
-            onRemoverCompromisso={removerCompromisso}
-            onRemoverEvolucao={removerEvolucao}
-          />
+          papel === "gestor" || papel === "coordenador" ? (
+            <TelaAgenda
+              agenda={agenda}
+              evolucoes={evolucoes}
+              onEnviarEvolucao={enviarEvolucao}
+              onAdicionarCompromisso={adicionarCompromisso}
+              onRemoverCompromisso={removerCompromisso}
+              onRemoverEvolucao={removerEvolucao}
+            />
+          ) : (
+            <div className="f30-vazio">🔒 Acesso Restrito: A agenda gerencial é exclusiva da Supervisão e Coordenação.</div>
+          )
         )}
 
         {aba === "feedback" && (
           <TelaFeedback
-            colaboradores={colaboradores}
-            feedbacks={feedbacks}
+            colaboradores={colaboradoresVisiveis}
+            feedbacks={feedbacksVisiveis}
             onEnviarFeedback={enviarFeedback}
             onResponder={responderFeedback}
             onRemoverFeedback={removerFeedback}
             papel={papel}
-            colaboradorLogadoId={colaboradorLogadoId}
+            colaboradorLogadoId={colaboradorLogadoEfetivoId}
           />
         )}
 
         {aba === "checklist" && (
           papel === "gestor" || papel === "coordenador" ? (
             <TelaChecklistAtraso
-              colaboradores={colaboradores}
-              checklists={checklists}
+              colaboradores={colaboradoresVisiveis}
+              checklists={checklistsVisiveis}
               onRegistrar={registrarAtraso}
               onRemoverAtraso={removerAtraso}
             />
           ) : (
-            <div className="f30-vazio">Esta tela é exclusiva do perfil de gestão/coordenação.</div>
+            <div className="f30-vazio">🔒 Acesso Restrito: O checklist de atraso é exclusivo dos níveis de Supervisão e Coordenação.</div>
           )
         )}
       </main>
