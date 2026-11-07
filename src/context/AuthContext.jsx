@@ -7,15 +7,39 @@ import {
   sendPasswordResetEmail,
   signOut,
 } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db, firebaseConfigurado } from "../firebase.js";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [usuario, setUsuario] = useState(null);
+  const [perfilUsuario, setPerfilUsuario] = useState("gestor"); // "colaborador" | "gestor" | "coordenador"
   const [carregando, setCarregando] = useState(true);
   const [modoDemo, setModoDemo] = useState(!firebaseConfigurado);
+
+  async function carregarPerfilFirestore(uid, perfilFallback) {
+    const salvoLocal = localStorage.getItem(`f30_perfil_${uid}`);
+    const padrao = perfilFallback || salvoLocal || "gestor";
+    setPerfilUsuario(padrao);
+
+    if (!db) return padrao;
+    try {
+      const snap = await getDoc(doc(db, "usuarios", uid));
+      if (snap.exists() && snap.data()?.perfil) {
+        const p = snap.data().perfil;
+        setPerfilUsuario(p);
+        localStorage.setItem(`f30_perfil_${uid}`, p);
+        return p;
+      } else if (perfilFallback) {
+        await setDoc(doc(db, "usuarios", uid), { perfil: perfilFallback, emailVerificado: true }, { merge: true });
+        localStorage.setItem(`f30_perfil_${uid}`, perfilFallback);
+      }
+    } catch (e) {
+      console.warn("Aviso ao ler perfil do usuário:", e);
+    }
+    return padrao;
+  }
 
   useEffect(() => {
     if (!auth || !firebaseConfigurado) {
@@ -33,10 +57,9 @@ export function AuthProvider({ children }) {
             } catch (e) {
               console.warn("Aviso ao recarregar usuário:", e);
             }
-            // Só libera o usuário no estado global se o e-mail estiver verificado
             if (u.emailVerified) {
-              // Atualiza o token JWT para que o Firestore reconheça email_verified == true
               await u.getIdToken(true);
+              await carregarPerfilFirestore(u.uid);
               setUsuario(u);
             } else {
               setUsuario(null);
@@ -61,12 +84,13 @@ export function AuthProvider({ children }) {
   /**
    * 1. Fluxo de Cadastro:
    * - Cria o usuário via createUserWithEmailAndPassword
-   * - Cria documento de perfil inicial em /usuarios/{uid}
+   * - Salva o cargo/perfil escolhido (colaborador, gestor ou coordenador) em /usuarios/{uid}
    * - Dispara imediatamente sendEmailVerification(user)
-   * - Desloga temporariamente com signOut(auth) para impedir acesso sem verificar
+   * - Desloga temporariamente com signOut(auth)
    */
-  async function cadastrar(email, senha) {
+  async function cadastrar(email, senha, perfilEscolhido = "gestor") {
     if (!auth || !firebaseConfigurado) {
+      setPerfilUsuario(perfilEscolhido);
       setUsuario({ email: email || "gestora@front30.com", uid: "demo-user", emailVerified: true });
       setModoDemo(true);
       return { verificacaoEnviada: false };
@@ -75,12 +99,14 @@ export function AuthProvider({ children }) {
     const credencial = await createUserWithEmailAndPassword(auth, email, senha);
     const user = credencial.user;
 
-    // Criação opcional do perfil inicial em /usuarios/{userId} (permitido no create das rules)
+    localStorage.setItem(`f30_perfil_${user.uid}`, perfilEscolhido);
+
     if (db) {
       try {
         await setDoc(doc(db, "usuarios", user.uid), {
           uid: user.uid,
           email: user.email,
+          perfil: perfilEscolhido,
           criadoEm: serverTimestamp(),
           emailVerificado: false,
         });
@@ -89,10 +115,7 @@ export function AuthProvider({ children }) {
       }
     }
 
-    // Dispara imediatamente o e-mail de verificação
     await sendEmailVerification(user);
-
-    // Desloga o usuário temporariamente para impedir acesso automático sem validar
     await signOut(auth);
     setUsuario(null);
 
@@ -103,12 +126,11 @@ export function AuthProvider({ children }) {
    * 2. Fluxo de Login:
    * - Faz login via signInWithEmailAndPassword
    * - Executa obrigatoriamente await user.reload()
-   * - Verifica user.emailVerified:
-   *   - Se false: desconecta com signOut(auth) e lança código auth/email-not-verified
-   *   - Se true: atualiza o token e libera acesso ao sistema
+   * - Verifica user.emailVerified
    */
-  async function entrar(email, senha) {
+  async function entrar(email, senha, perfilEscolhido) {
     if (!auth || !firebaseConfigurado) {
+      setPerfilUsuario(perfilEscolhido || "gestor");
       setUsuario({ email: email || "gestora@front30.com", uid: "demo-user", emailVerified: true });
       setModoDemo(true);
       return { emailVerified: true };
@@ -117,11 +139,9 @@ export function AuthProvider({ children }) {
     const credencial = await signInWithEmailAndPassword(auth, email, senha);
     const user = credencial.user;
 
-    // Sincroniza obrigatoriamente os dados atualizados do servidor do Firebase
     await user.reload();
 
     if (!user.emailVerified) {
-      // Desconecta a sessão para bloquear acesso sem confirmação
       await signOut(auth);
       setUsuario(null);
       const erroNaoVerificado = new Error("Seu e-mail ainda não foi confirmado.");
@@ -129,16 +149,12 @@ export function AuthProvider({ children }) {
       throw erroNaoVerificado;
     }
 
-    // Força atualização do token JWT para o Firestore validar request.auth.token.email_verified == true
     await user.getIdToken(true);
+    await carregarPerfilFirestore(user.uid, perfilEscolhido);
     setUsuario(auth.currentUser);
     return { emailVerified: true, user: auth.currentUser };
   }
 
-  /**
-   * Reenvia o link de confirmação de e-mail realizando login temporário,
-   * disparando sendEmailVerification(user) e desconectando em seguida.
-   */
   async function reenviarVerificacao(email, senha) {
     if (!auth || !firebaseConfigurado) return;
     const credencial = await signInWithEmailAndPassword(auth, email, senha);
@@ -147,6 +163,7 @@ export function AuthProvider({ children }) {
 
     if (user.emailVerified) {
       await user.getIdToken(true);
+      await carregarPerfilFirestore(user.uid);
       setUsuario(auth.currentUser);
       return { jaVerificado: true };
     }
@@ -174,6 +191,8 @@ export function AuthProvider({ children }) {
 
   const valor = {
     usuario,
+    perfilUsuario,
+    setPerfilUsuario,
     carregando,
     modoDemo,
     firebaseConfigurado,

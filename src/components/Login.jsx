@@ -24,6 +24,7 @@ export default function Login() {
   const [modo, setModo] = useState("entrar"); // "entrar" | "cadastrar"
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+  const [perfil, setPerfil] = useState("gestor"); // "colaborador" | "gestor" | "coordenador"
   const [carregando, setCarregando] = useState(false);
   const [reenviando, setReenviando] = useState(false);
   const [erro, setErro] = useState("");
@@ -39,7 +40,7 @@ export default function Login() {
     if (!firebaseConfigurado) {
       setCarregando(true);
       try {
-        await entrar(email || "gestora@front30.com", senha || "demo123");
+        await entrar(email || "gestora@front30.com", senha || "demo123", perfil);
       } catch (err) {
         setErro(traduzirErro(err));
       } finally {
@@ -56,9 +57,9 @@ export default function Login() {
     setCarregando(true);
     try {
       if (modo === "entrar") {
-        await entrar(email, senha);
+        await entrar(email, senha, perfil);
       } else {
-        const res = await cadastrar(email, senha);
+        const res = await cadastrar(email, senha, perfil);
         if (res?.verificacaoEnviada) {
           setModo("entrar");
           setPrecisaVerificar(true);
@@ -130,8 +131,8 @@ export default function Login() {
         <h1 className="f30-login-titulo">{modo === "entrar" ? "Entrar na sua conta" : "Criar sua conta"}</h1>
         <p className="f30-login-sub">
           {modo === "entrar"
-            ? "Use o e-mail verificado e a senha cadastrados para acessar sua rotina."
-            : "Crie um acesso com um e-mail válido. Você receberá um link de confirmação."}
+            ? "Use o e-mail e a senha cadastrados para acessar sua rotina."
+            : "Crie um acesso com e-mail e senha para começar a usar o Front 30'."}
         </p>
 
         {!firebaseConfigurado && (
@@ -143,7 +144,7 @@ export default function Login() {
         <form className="f30-form" onSubmit={enviar}>
           <label>E-mail</label>
           <input
-            type="email"
+            type="text"
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -157,6 +158,13 @@ export default function Login() {
             onChange={(e) => setSenha(e.target.value)}
             placeholder="••••••••"
           />
+
+          <label>Perfil de acesso</label>
+          <select value={perfil} onChange={(e) => setPerfil(e.target.value)}>
+            <option value="colaborador">Colaborador</option>
+            <option value="gestor">Gestor(a)</option>
+            <option value="coordenador">Coordenador(a) Geral</option>
+          </select>
 
           {erro && <div className="f30-login-erro">{erro}</div>}
           {aviso && <div className="f30-login-aviso">{aviso}</div>}

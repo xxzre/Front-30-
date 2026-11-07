@@ -706,8 +706,9 @@ function TelaFeedback({ colaboradores, feedbacks, onEnviarFeedback, onResponder,
   const [texto, setTexto] = useState("");
   const [respostas, setRespostas] = useState({});
 
-  const listaVisivel = papel === "gestor" ? colaboradores : colaboradores.filter((c) => c.id === colaboradorLogadoId);
-  const feedbacksDoColaborador = feedbacks.filter((f) => f.colaboradorId === (papel === "gestor" ? colaboradorId : colaboradorLogadoId));
+  const temAcessoTotal = papel === "gestor" || papel === "coordenador";
+  const listaVisivel = temAcessoTotal ? colaboradores : colaboradores.filter((c) => c.id === colaboradorLogadoId);
+  const feedbacksDoColaborador = feedbacks.filter((f) => f.colaboradorId === (temAcessoTotal ? colaboradorId : colaboradorLogadoId));
 
   function enviar() {
     if (!texto.trim()) return;
@@ -724,7 +725,7 @@ function TelaFeedback({ colaboradores, feedbacks, onEnviarFeedback, onResponder,
 
   return (
     <div className="f30-grid f30-grid-2">
-      {papel === "gestor" && (
+      {temAcessoTotal && (
         <div>
           <div className="f30-secao-titulo">Novo feedback</div>
           <div className="f30-card f30-form">
@@ -743,7 +744,7 @@ function TelaFeedback({ colaboradores, feedbacks, onEnviarFeedback, onResponder,
 
       <div>
         <div className="f30-secao-titulo">
-          {papel === "gestor" ? `Linha do tempo — ${colaboradores.find((c) => c.id === colaboradorId)?.nome}` : "Meus feedbacks"}
+          {temAcessoTotal ? `Linha do tempo — ${colaboradores.find((c) => c.id === colaboradorId)?.nome}` : "Meus feedbacks"}
         </div>
         {feedbacksDoColaborador.length ? [...feedbacksDoColaborador].reverse().map((f) => (
           <div className="f30-feed-item" key={f.id}>
@@ -851,9 +852,10 @@ function TelaChecklistAtraso({ colaboradores, checklists, onRegistrar }) {
 /* ================================== APP ================================== */
 
 export default function App() {
-  const { usuario, sair } = useAuth();
+  const { usuario, perfilUsuario, setPerfilUsuario, sair } = useAuth();
   const [aba, setAba] = useState("inicio");
-  const [papel, setPapel] = useState("gestor");
+  const papel = perfilUsuario || "gestor";
+  const setPapel = setPerfilUsuario;
   const [colaboradorLogadoId, setColaboradorLogadoId] = useState("c1");
 
   const [colaboradores] = useState(COLABORADORES_INICIAIS);
@@ -1018,9 +1020,10 @@ export default function App() {
           ))}
         </nav>
         <div className="f30-role-switch">
-          <label>Perfil de demonstração</label>
+          <label>Perfil de acesso</label>
           <select value={papel} onChange={(e) => setPapel(e.target.value)}>
-            <option value="gestor">Gestora (acesso total)</option>
+            <option value="coordenador">Coordenador(a) Geral</option>
+            <option value="gestor">Gestor(a) (acesso ao time)</option>
             <option value="colaborador">Colaborador — Renata Aquino</option>
           </select>
         </div>
@@ -1034,7 +1037,13 @@ export default function App() {
         <div className="f30-header">
           <div>
             <h1>{ABAS.find((a) => a.id === aba)?.rotulo}</h1>
-            <p>{papel === "gestor" ? "Visão da gestora — acesso completo ao time" : "Visão do colaborador — apenas seus próprios dados"}</p>
+            <p>
+              {papel === "coordenador"
+                ? "Visão da coordenação geral — acompanhamento estratégico e acesso total"
+                : papel === "gestor"
+                ? "Visão da gestora — acesso completo ao time"
+                : "Visão do colaborador — apenas seus próprios dados"}
+            </p>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span
@@ -1068,10 +1077,10 @@ export default function App() {
         )}
 
         {aba === "time" && (
-          papel === "gestor" ? (
+          papel === "gestor" || papel === "coordenador" ? (
             <TelaTime colaboradores={colaboradores} feedbacks={feedbacks} checklists={checklists} reconhecimentos={reconhecimentos} />
           ) : (
-            <div className="f30-vazio">Esta tela é exclusiva do perfil de gestora. Veja seus dados em Feedback e Checklist de Atraso.</div>
+            <div className="f30-vazio">Esta tela é exclusiva do perfil de gestão/coordenação. Veja seus dados em Feedback e Checklist de Atraso.</div>
           )
         )}
 
@@ -1095,10 +1104,10 @@ export default function App() {
         )}
 
         {aba === "checklist" && (
-          papel === "gestor" ? (
+          papel === "gestor" || papel === "coordenador" ? (
             <TelaChecklistAtraso colaboradores={colaboradores} checklists={checklists} onRegistrar={registrarAtraso} />
           ) : (
-            <div className="f30-vazio">Esta tela é exclusiva do perfil de gestora.</div>
+            <div className="f30-vazio">Esta tela é exclusiva do perfil de gestão/coordenação.</div>
           )
         )}
       </main>
