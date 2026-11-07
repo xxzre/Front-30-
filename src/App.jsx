@@ -1,4 +1,6 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { db } from "./firebase.js";
 import { useAuth } from "./context/AuthContext.jsx";
 
 /* =========================================================================
@@ -864,6 +866,42 @@ export default function App() {
   const [checklists, setChecklists] = useState(CHECKLIST_ATRASO_INICIAL);
   const [analise, setAnalise] = useState(null);
   const [toast, setToast] = useState(null);
+  const [firestoreOnline, setFirestoreOnline] = useState(false);
+
+  // Sincronização em tempo real com o Firestore
+  useEffect(() => {
+    if (!db) return;
+    const docRef = doc(db, "front30", "estado_time");
+    const unsubscribe = onSnapshot(
+      docRef,
+      (snap) => {
+        setFirestoreOnline(true);
+        if (snap.exists()) {
+          const dados = snap.data();
+          if (dados.itensRotina) setItensRotina(dados.itensRotina);
+          if (dados.melhorias) setMelhorias(dados.melhorias);
+          if (dados.evolucoes) setEvolucoes(dados.evolucoes);
+          if (dados.feedbacks) setFeedbacks(dados.feedbacks);
+          if (dados.checklists) setChecklists(dados.checklists);
+        }
+      },
+      (err) => {
+        console.warn("Aviso Firestore:", err.message);
+        setFirestoreOnline(false);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  async function salvarNoFirestore(novosDados) {
+    if (!db) return;
+    try {
+      const docRef = doc(db, "front30", "estado_time");
+      await setDoc(docRef, novosDados, { merge: true });
+    } catch (e) {
+      console.warn("Erro ao salvar no Firestore:", e);
+    }
+  }
 
   function mostrarToast(msg) {
     setToast(msg);
@@ -871,10 +909,14 @@ export default function App() {
   }
 
   function alternarStatusItem(bloco, id) {
-    setItensRotina((prev) => ({
-      ...prev,
-      [bloco]: prev[bloco].map((item) => (item.id === id ? { ...item, status: PROX_STATUS[item.status] } : item)),
-    }));
+    setItensRotina((prev) => {
+      const atualizado = {
+        ...prev,
+        [bloco]: prev[bloco].map((item) => (item.id === id ? { ...item, status: PROX_STATUS[item.status] } : item)),
+      };
+      salvarNoFirestore({ itensRotina: atualizado });
+      return atualizado;
+    });
   }
 
   function adicionarMelhoria(form) {
@@ -890,36 +932,60 @@ export default function App() {
       status: "em_andamento",
       criadoEm: "2026-09-09",
     };
-    setMelhorias((prev) => [nova, ...prev]);
+    setMelhorias((prev) => {
+      const atualizado = [nova, ...prev];
+      salvarNoFirestore({ melhorias: atualizado });
+      return atualizado;
+    });
     mostrarToast("Registro de melhoria criado.");
   }
 
   function concluirMelhoria(id, resultado, aprendizado) {
-    setMelhorias((prev) => prev.map((m) => (m.id === id ? { ...m, resultado, aprendizado, status: "concluida" } : m)));
+    setMelhorias((prev) => {
+      const atualizado = prev.map((m) => (m.id === id ? { ...m, resultado, aprendizado, status: "concluida" } : m));
+      salvarNoFirestore({ melhorias: atualizado });
+      return atualizado;
+    });
     mostrarToast("Melhoria marcada como concluída.");
   }
 
   function enviarEvolucao(texto, periodo) {
     const nova = { id: gerarId("ev"), periodo, texto, data: "2026-09-09", status: "enviado" };
-    setEvolucoes((prev) => [...prev, nova]);
+    setEvolucoes((prev) => {
+      const atualizado = [...prev, nova];
+      salvarNoFirestore({ evolucoes: atualizado });
+      return atualizado;
+    });
     mostrarToast("Evolução enviada para a coordenadora.");
   }
 
   function enviarFeedback(colaboradorId, texto) {
     const novo = { id: gerarId("f"), colaboradorId, autor: "Você (gestora)", texto, data: "2026-09-09", resposta: null };
-    setFeedbacks((prev) => [...prev, novo]);
+    setFeedbacks((prev) => {
+      const atualizado = [...prev, novo];
+      salvarNoFirestore({ feedbacks: atualizado });
+      return atualizado;
+    });
     mostrarToast("Feedback enviado.");
   }
 
   function responderFeedback(feedbackId, texto) {
     const colab = colaboradores.find((c) => c.id === colaboradorLogadoId);
-    setFeedbacks((prev) => prev.map((f) => (f.id === feedbackId ? { ...f, resposta: { texto, autor: colab?.nome || "Colaborador", data: "2026-09-09" } } : f)));
+    setFeedbacks((prev) => {
+      const atualizado = prev.map((f) => (f.id === feedbackId ? { ...f, resposta: { texto, autor: colab?.nome || "Colaborador", data: "2026-09-09" } } : f));
+      salvarNoFirestore({ feedbacks: atualizado });
+      return atualizado;
+    });
     mostrarToast("Resposta enviada.");
   }
 
   function registrarAtraso(dados) {
     const novo = { id: gerarId("ch"), ...dados };
-    setChecklists((prev) => [...prev, novo]);
+    setChecklists((prev) => {
+      const atualizado = [...prev, novo];
+      salvarNoFirestore({ checklists: atualizado });
+      return atualizado;
+    });
     mostrarToast("Atraso registrado.");
   }
 
@@ -962,7 +1028,23 @@ export default function App() {
             <h1>{ABAS.find((a) => a.id === aba)?.rotulo}</h1>
             <p>{papel === "gestor" ? "Visão da gestora — acesso completo ao time" : "Visão do colaborador — apenas seus próprios dados"}</p>
           </div>
-          <div className="f30-date-stub">SDU · 09 SET 2026</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span
+              className="f30-mono"
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                padding: "5px 10px",
+                borderRadius: 999,
+                background: firestoreOnline ? "#dcfce7" : "#fef3c7",
+                color: firestoreOnline ? "#166534" : "#92400e",
+                border: firestoreOnline ? "1px solid #bbf7d0" : "1px solid #fde68a",
+              }}
+            >
+              {firestoreOnline ? "● FIRESTORE ONLINE" : "○ SINCRONIZANDO..."}
+            </span>
+            <div className="f30-date-stub">SDU · 09 SET 2026</div>
+          </div>
         </div>
 
         {aba === "inicio" && (
