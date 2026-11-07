@@ -204,6 +204,23 @@ const PROX_STATUS = { nao_iniciado: "em_andamento", em_andamento: "concluido", c
 
 /* ------------------------------- utilidades ------------------------------ */
 
+function obterDataHojeISO() {
+  const agora = new Date();
+  const ano = agora.getFullYear();
+  const mes = String(agora.getMonth() + 1).padStart(2, "0");
+  const dia = String(agora.getDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
+}
+
+function obterDataCabecalho() {
+  const meses = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
+  const agora = new Date();
+  const dia = String(agora.getDate()).padStart(2, "0");
+  const mes = meses[agora.getMonth()];
+  const ano = agora.getFullYear();
+  return `SDU · ${dia} ${mes} ${ano}`;
+}
+
 function formatarData(iso) {
   if (!iso) return "—";
   const [ano, mes, dia] = iso.split("-");
@@ -211,7 +228,7 @@ function formatarData(iso) {
 }
 
 function diasAte(iso) {
-  const hoje = new Date("2026-09-09T00:00:00");
+  const hoje = new Date(obterDataHojeISO() + "T00:00:00");
   const alvo = new Date(iso + "T00:00:00");
   return Math.round((alvo - hoje) / (1000 * 60 * 60 * 24));
 }
@@ -388,7 +405,7 @@ function TelaInicio({ colaboradores, melhorias, evolucoes, reconhecimentos, prio
   );
 }
 
-function CardColaborador({ colaborador, onAbrir }) {
+function CardColaborador({ colaborador, onAbrir, onRemover }) {
   return (
     <div className="f30-colab-card" onClick={() => onAbrir(colaborador)}>
       <div className="f30-colab-stub">
@@ -400,7 +417,23 @@ function CardColaborador({ colaborador, onAbrir }) {
             <div className="f30-colab-nome">{colaborador.nome}</div>
             <div className="f30-colab-cargo">{colaborador.cargo}</div>
           </div>
-          {colaborador.emAcompanhamento && <span className="f30-badge-acomp">ACOMPANHAMENTO</span>}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {colaborador.emAcompanhamento && <span className="f30-badge-acomp">ACOMPANHAMENTO</span>}
+            {onRemover && (
+              <button
+                type="button"
+                className="f30-btn secundario pequeno"
+                style={{ padding: "4px 8px", fontSize: 11, color: "var(--bad)", borderColor: "var(--bad-soft)" }}
+                title="Remover colaborador"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemover(colaborador.id, colaborador.nome);
+                }}
+              >
+                Remover
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="f30-colab-linha">
@@ -427,7 +460,7 @@ function CardColaborador({ colaborador, onAbrir }) {
   );
 }
 
-function PainelColaborador({ colaborador, feedbacks, checklists, reconhecimentos, onFechar }) {
+function PainelColaborador({ colaborador, feedbacks, checklists, reconhecimentos, onFechar, onRemover }) {
   const feedbacksDele = feedbacks.filter((f) => f.colaboradorId === colaborador.id);
   const atrasosDele = checklists.filter((c) => c.colaboradorId === colaborador.id);
   const reconhecimentosDele = reconhecimentos.filter((r) => r.colaboradorId === colaborador.id);
@@ -440,7 +473,22 @@ function PainelColaborador({ colaborador, feedbacks, checklists, reconhecimentos
             <div className="f30-colab-nome" style={{ fontSize: 19 }}>{colaborador.nome}</div>
             <div className="f30-colab-cargo">{colaborador.cargo}</div>
           </div>
-          <button className="f30-painel-fechar" onClick={onFechar}>×</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {onRemover && (
+              <button
+                type="button"
+                className="f30-btn secundario pequeno"
+                style={{ color: "var(--bad)", borderColor: "var(--bad)" }}
+                onClick={() => {
+                  onRemover(colaborador.id, colaborador.nome);
+                  onFechar();
+                }}
+              >
+                Remover colaborador
+              </button>
+            )}
+            <button className="f30-painel-fechar" onClick={onFechar}>×</button>
+          </div>
         </div>
 
         <div className="f30-secao">
@@ -515,13 +563,195 @@ function PainelColaborador({ colaborador, feedbacks, checklists, reconhecimentos
   );
 }
 
-function TelaTime({ colaboradores, feedbacks, checklists, reconhecimentos }) {
+function FormColaborador({ onSalvar, onCancelar }) {
+  const [form, setForm] = useState({
+    nome: "",
+    cargo: "Atendente de Relacionamento",
+    pontosFortes: "",
+    focoDesenvolvimento: "",
+    tmo: 320,
+    fcr: 85,
+    qualidade: 90,
+    retrabalho: 4,
+    emAcompanhamento: true,
+    proximoPasso: "Acompanhamento inicial de rotina.",
+    prazo: obterDataHojeISO(),
+  });
+
+  function atualizar(campo, valor) {
+    setForm({ ...form, [campo]: valor });
+  }
+
+  function enviar(e) {
+    e.preventDefault();
+    if (!form.nome.trim()) return;
+    const partes = form.nome.trim().split(/\s+/);
+    const iniciais =
+      partes.length >= 2
+        ? (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+        : form.nome.trim().slice(0, 2).toUpperCase();
+
+    const novo = {
+      id: gerarId("c"),
+      nome: form.nome.trim(),
+      cargo: form.cargo.trim() || "Atendente de Relacionamento",
+      iniciais,
+      pontosFortes: form.pontosFortes
+        ? form.pontosFortes.split(",").map((s) => s.trim()).filter(Boolean)
+        : ["Comprometimento"],
+      focoDesenvolvimento: form.focoDesenvolvimento.trim() || "Evolução contínua de indicadores",
+      indicadores: {
+        tmo: Number(form.tmo) || 320,
+        fcr: Number(form.fcr) || 85,
+        qualidade: Number(form.qualidade) || 90,
+        retrabalho: Number(form.retrabalho) || 4,
+      },
+      reconhecimentos: 0,
+      emAcompanhamento: Boolean(form.emAcompanhamento),
+      ultimaConversa: {
+        data: obterDataHojeISO(),
+        resumo: "Cadastro inicial no time.",
+        proximoPasso: form.proximoPasso.trim() || "Realizar 1:1 de boas-vindas.",
+        prazo: form.prazo || obterDataHojeISO(),
+      },
+    };
+    onSalvar(novo);
+  }
+
+  return (
+    <form className="f30-card f30-form" style={{ marginBottom: 18 }} onSubmit={enviar}>
+      <div className="f30-secao-titulo">Adicionar novo colaborador</div>
+      <div className="f30-grid f30-grid-2">
+        <div>
+          <label>Nome completo</label>
+          <input
+            type="text"
+            value={form.nome}
+            onChange={(e) => atualizar("nome", e.target.value)}
+            placeholder="Ex.: Lucas Martins"
+            required
+          />
+        </div>
+        <div>
+          <label>Cargo</label>
+          <input
+            type="text"
+            value={form.cargo}
+            onChange={(e) => atualizar("cargo", e.target.value)}
+            placeholder="Ex.: Atendente de Relacionamento"
+          />
+        </div>
+      </div>
+
+      <div className="f30-grid f30-grid-2">
+        <div>
+          <label>Pontos fortes (separados por vírgula)</label>
+          <input
+            type="text"
+            value={form.pontosFortes}
+            onChange={(e) => atualizar("pontosFortes", e.target.value)}
+            placeholder="Ex.: Agilidade, Boa comunicação"
+          />
+        </div>
+        <div>
+          <label>Foco de desenvolvimento</label>
+          <input
+            type="text"
+            value={form.focoDesenvolvimento}
+            onChange={(e) => atualizar("focoDesenvolvimento", e.target.value)}
+            placeholder="Ex.: Reduzir TMO em check-in"
+          />
+        </div>
+      </div>
+
+      <div className="f30-grid f30-grid-4" style={{ marginTop: 8 }}>
+        <div>
+          <label>TMO (s)</label>
+          <input type="text" value={form.tmo} onChange={(e) => atualizar("tmo", e.target.value)} />
+        </div>
+        <div>
+          <label>FCR (%)</label>
+          <input type="text" value={form.fcr} onChange={(e) => atualizar("fcr", e.target.value)} />
+        </div>
+        <div>
+          <label>Qualidade (%)</label>
+          <input type="text" value={form.qualidade} onChange={(e) => atualizar("qualidade", e.target.value)} />
+        </div>
+        <div>
+          <label>Retrabalho (%)</label>
+          <input type="text" value={form.retrabalho} onChange={(e) => atualizar("retrabalho", e.target.value)} />
+        </div>
+      </div>
+
+      <div className="f30-grid f30-grid-2" style={{ marginTop: 8 }}>
+        <div>
+          <label>Próximo passo combinado</label>
+          <input
+            type="text"
+            value={form.proximoPasso}
+            onChange={(e) => atualizar("proximoPasso", e.target.value)}
+          />
+        </div>
+        <div>
+          <label>Prazo do combinado</label>
+          <input
+            type="date"
+            value={form.prazo}
+            onChange={(e) => atualizar("prazo", e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="f30-checkbox-row" style={{ marginTop: 10 }}>
+        <input
+          type="checkbox"
+          checked={form.emAcompanhamento}
+          onChange={(e) => atualizar("emAcompanhamento", e.target.checked)}
+        />
+        Marcar colaborador como "Em acompanhamento"
+      </div>
+
+      <div className="f30-form-actions">
+        <button className="f30-btn" type="submit">Salvar colaborador</button>
+        <button className="f30-btn secundario" type="button" onClick={onCancelar}>Cancelar</button>
+      </div>
+    </form>
+  );
+}
+
+function TelaTime({ colaboradores, feedbacks, checklists, reconhecimentos, onAdicionarColaborador, onRemoverColaborador }) {
   const [selecionado, setSelecionado] = useState(null);
+  const [mostrarForm, setMostrarForm] = useState(false);
+
   return (
     <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+        <div style={{ fontSize: 13, color: "var(--ink-soft)" }}>
+          Gerencie os integrantes da sua equipe ({colaboradores.length} colaboradores ativos).
+        </div>
+        <button className="f30-btn" onClick={() => setMostrarForm(!mostrarForm)}>
+          {mostrarForm ? "Fechar formulário" : "+ Adicionar colaborador"}
+        </button>
+      </div>
+
+      {mostrarForm && (
+        <FormColaborador
+          onCancelar={() => setMostrarForm(false)}
+          onSalvar={(novo) => {
+            onAdicionarColaborador(novo);
+            setMostrarForm(false);
+          }}
+        />
+      )}
+
       <div className="f30-grid f30-grid-2">
         {colaboradores.map((c) => (
-          <CardColaborador key={c.id} colaborador={c} onAbrir={setSelecionado} />
+          <CardColaborador
+            key={c.id}
+            colaborador={c}
+            onAbrir={setSelecionado}
+            onRemover={onRemoverColaborador}
+          />
         ))}
       </div>
       {selecionado && (
@@ -531,6 +761,7 @@ function TelaTime({ colaboradores, feedbacks, checklists, reconhecimentos }) {
           checklists={checklists}
           reconhecimentos={reconhecimentos}
           onFechar={() => setSelecionado(null)}
+          onRemover={onRemoverColaborador}
         />
       )}
     </>
@@ -777,7 +1008,7 @@ function TelaFeedback({ colaboradores, feedbacks, onEnviarFeedback, onResponder,
 
 function TelaChecklistAtraso({ colaboradores, checklists, onRegistrar }) {
   const [colaboradorId, setColaboradorId] = useState(colaboradores[0]?.id);
-  const [data, setData] = useState("2026-09-09");
+  const [data, setData] = useState(obterDataHojeISO());
   const [motivos, setMotivos] = useState([]);
   const [observacao, setObservacao] = useState("");
   const [filtroColaborador, setFiltroColaborador] = useState("todos");
@@ -857,11 +1088,11 @@ export default function App() {
   const papel = perfilUsuario || "gestor";
   const [colaboradorLogadoId, setColaboradorLogadoId] = useState("c1");
 
-  const [colaboradores] = useState(COLABORADORES_INICIAIS);
+  const [colaboradores, setColaboradores] = useState(COLABORADORES_INICIAIS);
   const [itensRotina, setItensRotina] = useState(ITENS_ROTINA_INICIAIS);
   const [melhorias, setMelhorias] = useState(MELHORIAS_INICIAIS);
-  const [reconhecimentos] = useState(RECONHECIMENTOS_INICIAIS);
-  const [agenda] = useState(AGENDA_INICIAL);
+  const [reconhecimentos, setReconhecimentos] = useState(RECONHECIMENTOS_INICIAIS);
+  const [agenda, setAgenda] = useState(AGENDA_INICIAL);
   const [evolucoes, setEvolucoes] = useState(EVOLUCOES_INICIAIS);
   const [feedbacks, setFeedbacks] = useState(FEEDBACKS_INICIAIS);
   const [checklists, setChecklists] = useState(CHECKLIST_ATRASO_INICIAL);
@@ -879,18 +1110,33 @@ export default function App() {
         setFirestoreOnline(true);
         if (snap.exists()) {
           const dados = snap.data();
+          if (dados.colaboradores) setColaboradores(dados.colaboradores);
           if (dados.itensRotina) setItensRotina(dados.itensRotina);
           if (dados.melhorias) setMelhorias(dados.melhorias);
+          if (dados.reconhecimentos) setReconhecimentos(dados.reconhecimentos);
+          if (dados.agenda) setAgenda(dados.agenda);
           if (dados.evolucoes) setEvolucoes(dados.evolucoes);
           if (dados.feedbacks) setFeedbacks(dados.feedbacks);
           if (dados.checklists) setChecklists(dados.checklists);
+        } else {
+          // Inicializa o documento no Firestore na primeira vez com os dados iniciais
+          setDoc(docRef, {
+            colaboradores: COLABORADORES_INICIAIS,
+            itensRotina: ITENS_ROTINA_INICIAIS,
+            melhorias: MELHORIAS_INICIAIS,
+            reconhecimentos: RECONHECIMENTOS_INICIAIS,
+            agenda: AGENDA_INICIAL,
+            evolucoes: EVOLUCOES_INICIAIS,
+            feedbacks: FEEDBACKS_INICIAIS,
+            checklists: CHECKLIST_ATRASO_INICIAL,
+          }, { merge: true }).catch(() => {});
         }
       },
       (err) => {
         console.warn("Aviso Firestore:", err.code, err.message);
         setFirestoreOnline(false);
         if (err.code === "permission-denied") {
-          mostrarToast("Permissão negada no Firestore: verifique se seu e-mail foi confirmado.");
+          mostrarToast("Permissão negada no Firestore: verifique as Rules do projeto no Firebase Console.");
         }
       }
     );
@@ -902,10 +1148,11 @@ export default function App() {
     try {
       const docRef = doc(db, "front30", "estado_time");
       await setDoc(docRef, novosDados, { merge: true });
+      setFirestoreOnline(true);
     } catch (e) {
       console.warn("Erro ao salvar no Firestore:", e);
       if (e?.code === "permission-denied") {
-        mostrarToast("Permissão negada (permission-denied): confirme seu e-mail para salvar alterações.");
+        mostrarToast("Permissão negada (permission-denied): publique as regras no Firebase Console.");
       } else {
         mostrarToast("Erro ao sincronizar alteração com o servidor.");
       }
@@ -915,6 +1162,24 @@ export default function App() {
   function mostrarToast(msg) {
     setToast(msg);
     setTimeout(() => setToast(null), 2600);
+  }
+
+  function adicionarColaborador(novoColaborador) {
+    setColaboradores((prev) => {
+      const atualizado = [novoColaborador, ...prev];
+      salvarNoFirestore({ colaboradores: atualizado });
+      return atualizado;
+    });
+    mostrarToast(`Colaborador ${novoColaborador.nome} adicionado ao time.`);
+  }
+
+  function removerColaborador(id, nome) {
+    setColaboradores((prev) => {
+      const atualizado = prev.filter((c) => c.id !== id);
+      salvarNoFirestore({ colaboradores: atualizado });
+      return atualizado;
+    });
+    mostrarToast(`Colaborador ${nome || ""} removido.`);
   }
 
   function alternarStatusItem(bloco, id) {
@@ -935,11 +1200,11 @@ export default function App() {
       causa: form.causa,
       acao: form.acao,
       responsavel: form.responsavel,
-      prazo: form.prazo || "2026-09-30",
+      prazo: form.prazo || obterDataHojeISO(),
       resultado: "",
       aprendizado: "",
       status: "em_andamento",
-      criadoEm: "2026-09-09",
+      criadoEm: obterDataHojeISO(),
     };
     setMelhorias((prev) => {
       const atualizado = [nova, ...prev];
@@ -959,7 +1224,7 @@ export default function App() {
   }
 
   function enviarEvolucao(texto, periodo) {
-    const nova = { id: gerarId("ev"), periodo, texto, data: "2026-09-09", status: "enviado" };
+    const nova = { id: gerarId("ev"), periodo, texto, data: obterDataHojeISO(), status: "enviado" };
     setEvolucoes((prev) => {
       const atualizado = [...prev, nova];
       salvarNoFirestore({ evolucoes: atualizado });
@@ -969,7 +1234,7 @@ export default function App() {
   }
 
   function enviarFeedback(colaboradorId, texto) {
-    const novo = { id: gerarId("f"), colaboradorId, autor: "Você (gestora)", texto, data: "2026-09-09", resposta: null };
+    const novo = { id: gerarId("f"), colaboradorId, autor: "Você (gestora)", texto, data: obterDataHojeISO(), resposta: null };
     setFeedbacks((prev) => {
       const atualizado = [...prev, novo];
       salvarNoFirestore({ feedbacks: atualizado });
@@ -981,7 +1246,7 @@ export default function App() {
   function responderFeedback(feedbackId, texto) {
     const colab = colaboradores.find((c) => c.id === colaboradorLogadoId);
     setFeedbacks((prev) => {
-      const atualizado = prev.map((f) => (f.id === feedbackId ? { ...f, resposta: { texto, autor: colab?.nome || "Colaborador", data: "2026-09-09" } } : f));
+      const atualizado = prev.map((f) => (f.id === feedbackId ? { ...f, resposta: { texto, autor: colab?.nome || "Colaborador", data: obterDataHojeISO() } } : f));
       salvarNoFirestore({ feedbacks: atualizado });
       return atualizado;
     });
@@ -1051,7 +1316,7 @@ export default function App() {
             >
               {firestoreOnline ? "● FIRESTORE ONLINE" : "○ SINCRONIZANDO..."}
             </span>
-            <div className="f30-date-stub">SDU · 09 SET 2026</div>
+            <div className="f30-date-stub">{obterDataCabecalho()}</div>
           </div>
         </div>
 
@@ -1069,7 +1334,14 @@ export default function App() {
 
         {aba === "time" && (
           papel === "gestor" || papel === "coordenador" ? (
-            <TelaTime colaboradores={colaboradores} feedbacks={feedbacks} checklists={checklists} reconhecimentos={reconhecimentos} />
+            <TelaTime
+              colaboradores={colaboradores}
+              feedbacks={feedbacks}
+              checklists={checklists}
+              reconhecimentos={reconhecimentos}
+              onAdicionarColaborador={adicionarColaborador}
+              onRemoverColaborador={removerColaborador}
+            />
           ) : (
             <div className="f30-vazio">Esta tela é exclusiva do perfil de gestão/coordenação. Veja seus dados em Feedback e Checklist de Atraso.</div>
           )
