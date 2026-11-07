@@ -3,7 +3,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 import Login from "./Login.jsx";
 
 export default function RequireAuth({ children }) {
-  const { usuario, carregando } = useAuth();
+  const { usuario, carregando, modoDemo } = useAuth();
 
   if (carregando) {
     return (
@@ -13,7 +13,7 @@ export default function RequireAuth({ children }) {
     );
   }
 
-  if (!usuario) {
+  if (!usuario || (!modoDemo && !usuario.emailVerified)) {
     return <Login />;
   }
 

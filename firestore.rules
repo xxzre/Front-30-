@@ -1,0 +1,26 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Função auxiliar: verifica se o usuário está logado e com o e-mail verificado
+    function isVerifiedUser() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    // Coleção de perfil inicial do usuário (/usuarios/{userId})
+    match /usuarios/{userId} {
+      // Permite criar o documento inicial no cadastro se autenticado e for o próprio uid
+      allow create: if request.auth != null && request.auth.uid == userId;
+
+      // Bloqueia leitura, atualização e exclusão até que o e-mail seja confirmado
+      allow read, update, delete: if isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    // Demais coleções do sistema (ex: /front30/{docId}, etc.)
+    // Leituras e escritas normais só são permitidas para usuários autenticados E com e-mail verificado
+    match /{document=**} {
+      allow read, write: if isVerifiedUser();
+    }
+  }
+}

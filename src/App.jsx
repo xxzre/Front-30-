@@ -870,7 +870,7 @@ export default function App() {
 
   // Sincronização em tempo real com o Firestore
   useEffect(() => {
-    if (!db) return;
+    if (!db || !usuario || !usuario.emailVerified) return;
     const docRef = doc(db, "front30", "estado_time");
     const unsubscribe = onSnapshot(
       docRef,
@@ -886,20 +886,28 @@ export default function App() {
         }
       },
       (err) => {
-        console.warn("Aviso Firestore:", err.message);
+        console.warn("Aviso Firestore:", err.code, err.message);
         setFirestoreOnline(false);
+        if (err.code === "permission-denied") {
+          mostrarToast("Permissão negada no Firestore: verifique se seu e-mail foi confirmado.");
+        }
       }
     );
     return () => unsubscribe();
-  }, []);
+  }, [usuario]);
 
   async function salvarNoFirestore(novosDados) {
-    if (!db) return;
+    if (!db || !usuario) return;
     try {
       const docRef = doc(db, "front30", "estado_time");
       await setDoc(docRef, novosDados, { merge: true });
     } catch (e) {
       console.warn("Erro ao salvar no Firestore:", e);
+      if (e?.code === "permission-denied") {
+        mostrarToast("Permissão negada (permission-denied): confirme seu e-mail para salvar alterações.");
+      } else {
+        mostrarToast("Erro ao sincronizar alteração com o servidor.");
+      }
     }
   }
 
