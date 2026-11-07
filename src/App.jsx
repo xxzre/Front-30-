@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "./firebase.js";
 import { useAuth } from "./context/AuthContext.jsx";
+import PainelCoordenadora from "./components/PainelCoordenadora.jsx";
 
 /* =========================================================================
    FRONT 30' — protótipo funcional (fase 1: front-end apenas, dados fictícios)
@@ -261,6 +262,7 @@ const IconSeta = ({ melhorou, igual }) => (
 
 const ICONES_NAV = {
   inicio: <path d="M3 10.5 L12 4 L21 10.5 M5.5 9 V19 H18.5 V9" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />,
+  coordenacao: <path d="M4 19h16M6 16V9m6 7V5m6 11v-5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />,
   time: <path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM2.5 19c.6-3 2.8-5 5.5-5s4.9 2 5.5 5M13 19c.5-2.6 2.3-4.4 4.5-4.9M16 14.1c2 .4 3.5 2.1 4 4.9" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />,
   rotina: <path d="M12 7v5l3.2 1.9M21 12a9 9 0 1 1-9-9" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />,
   melhorias: <path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />,
@@ -271,6 +273,7 @@ const ICONES_NAV = {
 
 const ABAS = [
   { id: "inicio", rotulo: "Início" },
+  { id: "coordenacao", rotulo: "Coordenação" },
   { id: "time", rotulo: "Meu Time" },
   { id: "rotina", rotulo: "Minha Rotina" },
   { id: "melhorias", rotulo: "Melhorias" },
@@ -1494,6 +1497,14 @@ export default function App() {
             analise={analise}
             setAnalise={setAnalise}
           />
+        )}
+
+        {aba === "coordenacao" && (
+          papel === "coordenador" || papel === "gestor" ? (
+            <PainelCoordenadora melhorias={melhorias} feedbacks={feedbacks} checklists={checklists} />
+          ) : (
+            <div className="f30-vazio">Esta aba de dashboards executivos é exclusiva da Coordenação e Gestão.</div>
+          )
         )}
 
         {aba === "time" && (
