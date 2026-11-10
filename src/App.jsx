@@ -1,192 +1,19 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "./firebase.js";
-import { useAuth, LISTA_SUPERVISORES_HIERARQUIA } from "./context/AuthContext.jsx";
+import { useAuth } from "./context/AuthContext.jsx";
 import PainelCoordenadora from "./components/PainelCoordenadora.jsx";
 
 /* =========================================================================
-   FRONT 30' — protótipo funcional (fase 1: front-end apenas, dados fictícios)
+   FRONT 30' — 100% conectado ao Banco de Dados em Tempo Real
+   Sem dados fictícios pré-definidos e sem opções pré-selecionadas
    ========================================================================= */
 
-/* ---------------------------- Dados fictícios --------------------------- */
-
-const COLABORADORES_INICIAIS = [
-  {
-    id: "c1",
-    nome: "Renata Aquino",
-    cargo: "Atendente de Relacionamento Sênior",
-    supervisor: "Amanda",
-    iniciais: "RA",
-    pontosFortes: ["Empatia em casos sensíveis", "Domínio de remarcações"],
-    focoDesenvolvimento: "Reduzir tempo médio em chamadas de reembolso",
-    indicadores: { tmo: 342, fcr: 88, qualidade: 94, retrabalho: 4 },
-    reconhecimentos: 3,
-    emAcompanhamento: true,
-    ultimaConversa: { data: "2026-09-03", resumo: "Alinhamos script de reembolso e ela trouxe uma ideia de checklist rápido.", proximoPasso: "Testar checklist por 1 semana e trazer resultado.", prazo: "2026-09-10" },
-  },
-  {
-    id: "c2",
-    nome: "Diego Farias",
-    cargo: "Atendente de Relacionamento",
-    supervisor: "Jaqueline",
-    iniciais: "DF",
-    pontosFortes: ["Agilidade", "Boa escuta ativa"],
-    focoDesenvolvimento: "Aumentar first call resolution em bagagem extraviada",
-    indicadores: { tmo: 298, fcr: 74, qualidade: 89, retrabalho: 9 },
-    reconhecimentos: 1,
-    emAcompanhamento: true,
-    ultimaConversa: { data: "2026-08-28", resumo: "Conversamos sobre os retrabalhos de agosto; causa raiz parece ser falta de confirmação de endereço.", proximoPasso: "Passar a confirmar endereço em voz alta em toda ligação de bagagem.", prazo: "2026-09-11" },
-  },
-  {
-    id: "c3",
-    nome: "Juliana Prado",
-    cargo: "Atendente de Relacionamento Pleno",
-    supervisor: "Luciana Faiad",
-    iniciais: "JP",
-    pontosFortes: ["Consistência", "Referência em qualidade"],
-    focoDesenvolvimento: "Assumir mentoria de novatos",
-    indicadores: { tmo: 310, fcr: 91, qualidade: 97, retrabalho: 2 },
-    reconhecimentos: 5,
-    emAcompanhamento: false,
-    ultimaConversa: { data: "2026-08-20", resumo: "Ela topou apadrinhar o Diego nas próximas duas semanas.", proximoPasso: "Primeira sessão de apadrinhamento.", prazo: "2026-09-05" },
-  },
-  {
-    id: "c4",
-    nome: "Marcos Vidal",
-    cargo: "Atendente de Relacionamento",
-    supervisor: "Cristiane",
-    iniciais: "MV",
-    pontosFortes: ["Simpatia com passageiros difíceis"],
-    focoDesenvolvimento: "Reduzir TMO em atendimentos de check-in",
-    indicadores: { tmo: 405, fcr: 79, qualidade: 85, retrabalho: 7 },
-    reconhecimentos: 0,
-    emAcompanhamento: true,
-    ultimaConversa: { data: "2026-09-01", resumo: "Ligações de check-in estão longas por excesso de explicação. Ele concorda em objetivar mais.", proximoPasso: "Gravar 3 ligações e revisar juntos.", prazo: "2026-09-09" },
-  },
-  {
-    id: "c5",
-    nome: "Camila Torres",
-    cargo: "Atendente de Relacionamento Pleno",
-    supervisor: "Camila",
-    iniciais: "CT",
-    pontosFortes: ["Organização", "Registro impecável de ocorrências"],
-    focoDesenvolvimento: "Ganhar confiança para negociar exceções",
-    indicadores: { tmo: 289, fcr: 86, qualidade: 93, retrabalho: 3 },
-    reconhecimentos: 2,
-    emAcompanhamento: false,
-    ultimaConversa: { data: "2026-08-25", resumo: "Falamos sobre autonomia em pequenas exceções de tarifa.", proximoPasso: "Aplicar autonomia combinada em 3 casos e revisar.", prazo: "2026-09-08" },
-  },
-];
-
-const INDICADORES_TIME = {
-  tmo: { atual: 328, anterior: 351, unidade: "s", melhorQuando: "menor" },
-  fcr: { atual: 84, anterior: 80, unidade: "%", melhorQuando: "maior" },
-  qualidade: { atual: 92, anterior: 90, unidade: "%", melhorQuando: "maior" },
-  retrabalho: { atual: 5, anterior: 7, unidade: "%", melhorQuando: "menor" },
+const ROTINA_VAZIA = {
+  hoje: [],
+  semana: [],
+  mes: [],
 };
-
-const ITENS_ROTINA_INICIAIS = {
-  hoje: [
-    { id: "h1", texto: "Verificar indicadores do time", status: "concluido" },
-    { id: "h2", texto: "Fazer uma escuta com um colaborador", status: "em_andamento" },
-    { id: "h3", texto: "Observar um processo em execução", status: "nao_iniciado" },
-    { id: "h4", texto: "Reconhecer alguém publicamente", status: "nao_iniciado" },
-    { id: "h5", texto: "Registrar pendência do dia", status: "nao_iniciado" },
-  ],
-  semana: [
-    { id: "s1", texto: "Analisar desvios da semana", status: "em_andamento" },
-    { id: "s2", texto: "Ouvir a equipe (rodada rápida)", status: "nao_iniciado" },
-    { id: "s3", texto: "Escolher uma melhoria para priorizar", status: "concluido" },
-    { id: "s4", texto: "Acompanhar ação em andamento", status: "em_andamento" },
-    { id: "s5", texto: "Reconhecer evolução de alguém", status: "nao_iniciado" },
-  ],
-  mes: [
-    { id: "m1", texto: "Comparar resultados com o mês anterior", status: "nao_iniciado" },
-    { id: "m2", texto: "Revisar plano de desenvolvimento do time", status: "nao_iniciado" },
-    { id: "m3", texto: "Analisar melhorias concluídas", status: "em_andamento" },
-    { id: "m4", texto: "Fechar aprendizados do mês", status: "nao_iniciado" },
-  ],
-};
-
-const MELHORIAS_INICIAIS = [
-  {
-    id: "mel1",
-    problema: "Retrabalho alto em solicitações de reembolso",
-    causa: "Passageiro não recebia confirmação escrita, ligava de novo para checar",
-    acao: "Enviar SMS de confirmação automático ao final da chamada",
-    responsavel: "Renata Aquino",
-    prazo: "2026-08-30",
-    resultado: "Retrabalho do time caiu de 9% para 5% em 3 semanas",
-    aprendizado: "Confirmação escrita reduz ansiedade do passageiro e ligações repetidas",
-    status: "concluida",
-    criadoEm: "2026-08-05",
-  },
-  {
-    id: "mel2",
-    problema: "TMO elevado em atendimentos de check-in",
-    causa: "Roteiro de explicação muito longo para casos simples",
-    acao: "Criar roteiro curto para os 3 casos mais comuns de check-in",
-    responsavel: "Marcos Vidal",
-    prazo: "2026-09-09",
-    resultado: "",
-    aprendizado: "",
-    status: "em_andamento",
-    criadoEm: "2026-08-27",
-  },
-  {
-    id: "mel3",
-    problema: "Baixo FCR em casos de bagagem extraviada",
-    causa: "Endereço de entrega não é confirmado na ligação original",
-    acao: "Confirmar endereço em voz alta em toda ligação de bagagem",
-    responsavel: "Diego Farias",
-    prazo: "2026-09-11",
-    resultado: "",
-    aprendizado: "",
-    status: "em_andamento",
-    criadoEm: "2026-08-28",
-  },
-];
-
-const RECONHECIMENTOS_INICIAIS = [
-  { id: "r1", colaboradorId: "c3", descricao: "Aceitou apadrinhar um colega novo, de forma voluntária", data: "2026-08-20" },
-  { id: "r2", colaboradorId: "c1", descricao: "Trouxe uma solução própria para reduzir retrabalho", data: "2026-08-22" },
-  { id: "r3", colaboradorId: "c5", descricao: "Registro impecável em uma ocorrência complexa", data: "2026-09-02" },
-];
-
-const AGENDA_INICIAL = [
-  { id: "ag1", titulo: "1:1 — Renata Aquino", data: "2026-09-10", hora: "09:00" },
-  { id: "ag2", titulo: "1:1 — Marcos Vidal", data: "2026-09-09", hora: "11:00" },
-  { id: "ag3", titulo: "Alinhamento semanal do time", data: "2026-09-12", hora: "14:00" },
-  { id: "ag4", titulo: "1:1 — Diego Farias", data: "2026-09-11", hora: "10:30" },
-];
-
-const EVOLUCOES_INICIAIS = [
-  { id: "ev1", periodo: "esta_semana", texto: "Retrabalho caiu 2 pontos após ação de SMS de confirmação. Seguimos monitorando check-in.", data: "2026-09-02", status: "enviado" },
-];
-
-const FEEDBACKS_INICIAIS = [
-  {
-    id: "f1",
-    colaboradorId: "c1",
-    autor: "Você (gestora)",
-    texto: "Sua ideia do checklist de reembolso foi ótima — já vi diferença na clareza das ligações. Bora manter e revisar o texto juntas semana que vem.",
-    data: "2026-09-03",
-    resposta: { texto: "Obrigada! Já ajustei duas perguntas do checklist com base nas ligações desta semana.", autor: "Renata Aquino", data: "2026-09-04" },
-  },
-  {
-    id: "f2",
-    colaboradorId: "c4",
-    autor: "Você (gestora)",
-    texto: "Percebi que as explicações de check-in ainda estão longas. Vamos gravar algumas ligações e revisar juntos para deixar mais direto.",
-    data: "2026-09-01",
-    resposta: null,
-  },
-];
-
-const CHECKLIST_ATRASO_INICIAL = [
-  { id: "ch1", colaboradorId: "c2", data: "2026-08-19", motivos: ["Problema no transporte público"], observacao: "" },
-  { id: "ch2", colaboradorId: "c4", data: "2026-08-27", motivos: ["Instabilidade na operadora de internet", "Imprevisto pessoal/familiar"], observacao: "Resolveu em 20 minutos." },
-];
 
 const MOTIVOS_ATRASO = [
   "Instabilidade na operadora de internet",
@@ -205,8 +32,16 @@ const ROTULOS_INDICADOR = {
 };
 
 const NOMES_BLOCO = { hoje: "Hoje", semana: "Esta semana", mes: "Este mês" };
-const NOMES_STATUS_ITEM = { nao_iniciado: "Não iniciado", em_andamento: "Em andamento", concluido: "Concluído" };
-const PROX_STATUS = { nao_iniciado: "em_andamento", em_andamento: "concluido", concluido: "nao_iniciado" };
+const NOMES_STATUS_ITEM = {
+  nao_iniciado: "Não iniciado",
+  em_andamento: "Em andamento",
+  concluido: "Concluído",
+};
+const PROX_STATUS = {
+  nao_iniciado: "em_andamento",
+  em_andamento: "concluido",
+  concluido: "nao_iniciado",
+};
 
 /* ------------------------------- utilidades ------------------------------ */
 
@@ -229,33 +64,38 @@ function obterDataCabecalho() {
 
 function formatarData(iso) {
   if (!iso) return "—";
-  const [ano, mes, dia] = iso.split("-");
+  const partes = iso.split("-");
+  if (partes.length !== 3) return iso;
+  const [ano, mes, dia] = partes;
   return `${dia}/${mes}/${ano.slice(2)}`;
 }
 
 function diasAte(iso) {
+  if (!iso) return 0;
   const hoje = new Date(obterDataHojeISO() + "T00:00:00");
   const alvo = new Date(iso + "T00:00:00");
   return Math.round((alvo - hoje) / (1000 * 60 * 60 * 24));
-}
-
-function variacaoIndicador(tipo, atual, anterior) {
-  const melhorQuando = INDICADORES_TIME[tipo].melhorQuando;
-  const diff = atual - anterior;
-  const pctBase = anterior === 0 ? 0 : (diff / anterior) * 100;
-  const melhorou = melhorQuando === "menor" ? diff < 0 : diff > 0;
-  return { diff, pct: Math.abs(pctBase).toFixed(1), melhorou, igual: diff === 0 };
 }
 
 function gerarId(prefixo) {
   return `${prefixo}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 }
 
-const CHAVE_STORAGE_GLOBAL = "f30_estado_persistido_v3";
+function calcularIniciais(nome) {
+  if (!nome || !nome.trim()) return "US";
+  const partes = nome.trim().split(/\s+/);
+  return partes.length >= 2
+    ? (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+    : nome.trim().slice(0, 2).toUpperCase();
+}
+
+/* ---------------- Persistência Local + Nuvem (Anti-Reversão no F5) ---------------- */
+
+const CHAVE_STORAGE_REAL = "f30_estado_limpo_v4";
 
 function lerEstadoLocal() {
   try {
-    const raw = localStorage.getItem(CHAVE_STORAGE_GLOBAL);
+    const raw = localStorage.getItem(CHAVE_STORAGE_REAL);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object") return parsed;
@@ -269,14 +109,16 @@ function lerEstadoLocal() {
 function gravarEstadoLocal(parcial) {
   try {
     const atual = lerEstadoLocal() || {
-      colaboradores: COLABORADORES_INICIAIS,
-      itensRotina: ITENS_ROTINA_INICIAIS,
-      melhorias: MELHORIAS_INICIAIS,
-      reconhecimentos: RECONHECIMENTOS_INICIAIS,
-      agenda: AGENDA_INICIAL,
-      evolucoes: EVOLUCOES_INICIAIS,
-      feedbacks: FEEDBACKS_INICIAIS,
-      checklists: CHECKLIST_ATRASO_INICIAL,
+      colaboradoresExtras: [],
+      idsExcluidos: [],
+      itensRotina: ROTINA_VAZIA,
+      melhorias: [],
+      reconhecimentos: [],
+      agenda: [],
+      evolucoes: [],
+      feedbacks: [],
+      checklists: [],
+      dadosCoordenacao: {},
       atualizadoEm: 0,
     };
     const novo = {
@@ -284,7 +126,7 @@ function gravarEstadoLocal(parcial) {
       ...parcial,
       atualizadoEm: parcial.atualizadoEm ?? Date.now(),
     };
-    localStorage.setItem(CHAVE_STORAGE_GLOBAL, JSON.stringify(novo));
+    localStorage.setItem(CHAVE_STORAGE_REAL, JSON.stringify(novo));
     return novo;
   } catch (e) {
     console.warn("Aviso ao gravar estado local:", e);
@@ -293,18 +135,6 @@ function gravarEstadoLocal(parcial) {
 }
 
 /* --------------------------------- ícones -------------------------------- */
-
-const IconSeta = ({ melhorou, igual }) => (
-  <svg width="14" height="14" viewBox="0 0 14 14" className="seta-tendencia" aria-hidden="true">
-    {igual ? (
-      <line x1="2" y1="7" x2="12" y2="7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    ) : melhorou ? (
-      <path d="M2 9 L7 3 L12 9 M7 3 L7 13" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-    ) : (
-      <path d="M2 5 L7 11 L12 5 M7 11 L7 1" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-    )}
-  </svg>
-);
 
 const ICONES_NAV = {
   inicio: <path d="M3 10.5 L12 4 L21 10.5 M5.5 9 V19 H18.5 V9" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />,
@@ -318,140 +148,88 @@ const ICONES_NAV = {
   perfil: <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />,
 };
 
-const ABAS = [
-  { id: "inicio", rotulo: "Início" },
-  { id: "coordenacao", rotulo: "Coordenação" },
-  { id: "time", rotulo: "Meu Time" },
-  { id: "rotina", rotulo: "Minha Rotina" },
-  { id: "melhorias", rotulo: "Melhorias" },
-  { id: "agenda", rotulo: "Agenda" },
-  { id: "feedback", rotulo: "Feedback" },
-  { id: "checklist", rotulo: "Checklist de Atraso" },
-  { id: "perfil", rotulo: "Meu Perfil" },
-];
-
 /* ============================== COMPONENTES ============================== */
 
-function KpiCard({ tipo }) {
-  const d = INDICADORES_TIME[tipo];
-  const v = variacaoIndicador(tipo, d.atual, d.anterior);
-  const classe = v.igual ? "igual" : v.melhorou ? "melhorou" : "piorou";
+function KpiCard({ rotulo, valor, unidade }) {
   return (
     <div className="f30-card f30-kpi">
       <div className="f30-kpi-top">
-        <span className="f30-kpi-label">{ROTULOS_INDICADOR[tipo]}</span>
+        <span className="f30-kpi-label">{rotulo}</span>
       </div>
       <div className="f30-kpi-value">
-        {d.atual}
-        <span>{d.unidade}</span>
+        {valor}
+        <span>{unidade}</span>
       </div>
-      <div className={`f30-kpi-delta ${classe}`}>
-        <IconSeta melhorou={v.melhorou} igual={v.igual} />
-        {v.igual ? "estável" : `${v.pct}${d.unidade === "%" ? " pts" : d.unidade} vs. período anterior`}
+      <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 4 }}>
+        Calculado em tempo real pelos cadastros do banco
       </div>
     </div>
   );
 }
 
-function TelaInicio({ colaboradores, melhorias, evolucoes, reconhecimentos, prioridadeDia, analise, setAnalise }) {
+function TelaInicio({ colaboradores, melhorias, reconhecimentos }) {
   const acoesEmAndamento = melhorias.filter((m) => m.status === "em_andamento");
   const acoesNoPrazo = acoesEmAndamento.filter((m) => diasAte(m.prazo) >= 0).length;
   const colaboradoresAcompanhamento = colaboradores.filter((c) => c.emAcompanhamento).length;
   const reconhecimentosSemana = reconhecimentos.filter((r) => diasAte(r.data) >= -7).length;
 
-  function analisarSemana() {
-    const pioras = Object.entries(INDICADORES_TIME).filter(([tipo, d]) => !variacaoIndicador(tipo, d.atual, d.anterior).melhorou && !variacaoIndicador(tipo, d.atual, d.anterior).igual);
-    const melhoras = Object.entries(INDICADORES_TIME).filter(([tipo, d]) => variacaoIndicador(tipo, d.atual, d.anterior).melhorou);
-    const acaoPositiva = melhorias.find((m) => m.status === "concluida" && m.resultado);
-    const principalDesvio = pioras[0];
-
-    let texto1 = melhoras.length
-      ? `O time avançou em ${melhoras.map(([t]) => ROTULOS_INDICADOR[t]).join(" e ")} nesta janela, com destaque para a redução de retrabalho após a ação de confirmação por SMS.`
-      : "Os indicadores do time se mantiveram estáveis nesta janela, sem grandes avanços nem retrocessos.";
-
-    let texto2 = principalDesvio
-      ? `O ponto de atenção é ${ROTULOS_INDICADOR[principalDesvio[0]]}, que piorou em relação ao período anterior — vale olhar mais de perto se é um caso pontual ou uma tendência.`
-      : "Nenhum indicador piorou nesta janela.";
-
-    let texto3 = acaoPositiva
-      ? `A ação "${acaoPositiva.acao}" (${acaoPositiva.responsavel}) já mostrou resultado: ${acaoPositiva.resultado}.`
-      : "Ainda não há uma ação concluída com resultado registrado nesta janela.";
-
-    setAnalise({
-      texto1,
-      texto2,
-      texto3,
-      decisao: null,
-    });
-  }
+  // Calcula a média real dos colaboradores visíveis (0 se não houver colaboradores cadastrados)
+  const medias = useMemo(() => {
+    if (!colaboradores.length) {
+      return { tmo: 0, fcr: 0, qualidade: 0, retrabalho: 0 };
+    }
+    const soma = colaboradores.reduce(
+      (acc, c) => ({
+        tmo: acc.tmo + (Number(c.indicadores?.tmo) || 0),
+        fcr: acc.fcr + (Number(c.indicadores?.fcr) || 0),
+        qualidade: acc.qualidade + (Number(c.indicadores?.qualidade) || 0),
+        retrabalho: acc.retrabalho + (Number(c.indicadores?.retrabalho) || 0),
+      }),
+      { tmo: 0, fcr: 0, qualidade: 0, retrabalho: 0 }
+    );
+    return {
+      tmo: Math.round(soma.tmo / colaboradores.length),
+      fcr: Math.round(soma.fcr / colaboradores.length),
+      qualidade: Math.round(soma.qualidade / colaboradores.length),
+      retrabalho: Math.round(soma.retrabalho / colaboradores.length),
+    };
+  }, [colaboradores]);
 
   return (
     <>
-      <div className="f30-prioridade">
-        <div>
-          <div className="f30-prioridade-eyebrow f30-mono">PRIORIDADE DO DIA</div>
-          <h2>{prioridadeDia}</h2>
+      <div className="f30-secao">
+        <div className="f30-grid f30-grid-4">
+          <KpiCard rotulo="TMO" valor={medias.tmo} unidade="s" />
+          <KpiCard rotulo="FCR" valor={medias.fcr} unidade="%" />
+          <KpiCard rotulo="Qualidade" valor={medias.qualidade} unidade="%" />
+          <KpiCard rotulo="Retrabalho" valor={medias.retrabalho} unidade="%" />
         </div>
       </div>
 
       <div className="f30-secao">
-        <div className="f30-grid f30-grid-4">
-          {Object.keys(INDICADORES_TIME).map((tipo) => (
-            <KpiCard key={tipo} tipo={tipo} />
-          ))}
-        </div>
-      </div>
-
-      <div className="f30-secao f30-grid f30-grid-3">
-        <div className="f30-card f30-resumo-item">
-          <div>
-            <div className="f30-resumo-num">{acoesNoPrazo} de {acoesEmAndamento.length}</div>
-            <div className="f30-resumo-txt">ações em andamento no prazo</div>
+        <div className="f30-grid f30-grid-3">
+          <div className="f30-card f30-mini">
+            <div className="f30-mini-num">
+              {acoesNoPrazo} <span style={{ fontSize: 15, color: "var(--ink-soft)" }}>de</span> {acoesEmAndamento.length}
+            </div>
+            <div className="f30-mini-label">ações de melhoria em andamento no prazo</div>
           </div>
-        </div>
-        <div className="f30-card f30-resumo-item">
-          <div>
-            <div className="f30-resumo-num">{colaboradoresAcompanhamento}</div>
-            <div className="f30-resumo-txt">colaboradores com acompanhamento previsto</div>
+          <div className="f30-card f30-mini">
+            <div className="f30-mini-num">{colaboradoresAcompanhamento}</div>
+            <div className="f30-mini-label">colaboradores cadastrados em acompanhamento</div>
           </div>
-        </div>
-        <div className="f30-card f30-resumo-item">
-          <div>
-            <div className="f30-resumo-num">{reconhecimentosSemana}</div>
-            <div className="f30-resumo-txt">reconhecimentos registrados na semana</div>
+          <div className="f30-card f30-mini">
+            <div className="f30-mini-num">{reconhecimentosSemana}</div>
+            <div className="f30-mini-label">reconhecimentos registrados na semana</div>
           </div>
         </div>
       </div>
 
-      <div className="f30-secao f30-card">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-          <div>
-            <div className="f30-secao-titulo" style={{ marginBottom: 2 }}>Analisar minha semana</div>
-            <div style={{ fontSize: 13, color: "var(--ink-soft)" }}>Um resumo gerado a partir dos seus dados registrados — a decisão final é sempre sua.</div>
-          </div>
-          <button className="f30-btn" onClick={analisarSemana}>Analisar minha semana</button>
+      {colaboradores.length === 0 && (
+        <div className="f30-vazio" style={{ marginTop: 12 }}>
+          Nenhum colaborador cadastrado ainda nesta equipe. Os indicadores serão calculados automaticamente assim que os usuários se cadastrarem no banco de dados ou forem adicionados na aba Meu Time.
         </div>
-
-        {analise && (
-          <div className="f30-analise-box">
-            <h3>RESUMO — SEMANA ATUAL</h3>
-            <p>{analise.texto1}</p>
-            <p>{analise.texto2}</p>
-            <p>{analise.texto3}</p>
-            <p className="f30-analise-pergunta">Você quer manter a ação atual ou testar uma nova abordagem no próximo ciclo?</p>
-            {!analise.decisao ? (
-              <div className="f30-analise-opcoes">
-                <button className="f30-btn pequeno" onClick={() => setAnalise({ ...analise, decisao: "manter" })}>Manter ação atual</button>
-                <button className="f30-btn secundario pequeno" onClick={() => setAnalise({ ...analise, decisao: "testar" })}>Testar nova abordagem</button>
-              </div>
-            ) : (
-              <div className="f30-analise-decisao">
-                Decisão registrada: {analise.decisao === "manter" ? "manter a ação atual." : "testar uma nova abordagem no próximo ciclo."}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      )}
     </>
   );
 }
@@ -459,15 +237,21 @@ function TelaInicio({ colaboradores, melhorias, evolucoes, reconhecimentos, prio
 function CardColaborador({ colaborador, onAbrir, onRemover }) {
   return (
     <div className="f30-colab-card" onClick={() => onAbrir(colaborador)}>
-      <div className="f30-colab-stub">
-        <div className="f30-colab-avatar">{colaborador.iniciais}</div>
-      </div>
+      <div className="f30-colab-avatar">{colaborador.iniciais || calcularIniciais(colaborador.nome)}</div>
       <div className="f30-colab-body">
         <div className="f30-colab-top">
           <div>
             <div className="f30-colab-nome">{colaborador.nome}</div>
             <div className="f30-colab-cargo">
-              {colaborador.cargo} · <span style={{ color: "#EA580C", fontWeight: 700 }}>Sup: {colaborador.supervisor || "Jaqueline"}</span>
+              {colaborador.cargo || "Colaborador(a)"}
+              {colaborador.supervisorNome && (
+                <>
+                  {" · "}
+                  <span style={{ color: "#EA580C", fontWeight: 700 }}>
+                    Sup: {colaborador.supervisorNome}
+                  </span>
+                </>
+              )}
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -477,10 +261,10 @@ function CardColaborador({ colaborador, onAbrir, onRemover }) {
                 type="button"
                 className="f30-btn secundario pequeno"
                 style={{ padding: "4px 8px", fontSize: 11, color: "var(--bad)", borderColor: "var(--bad-soft)" }}
-                title="Remover colaborador"
+                title="Remover colaborador permanentemente"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onRemover(colaborador.id, colaborador.nome);
+                  onRemover(colaborador.id, colaborador.nome, colaborador.uid);
                 }}
               >
                 Remover
@@ -490,7 +274,7 @@ function CardColaborador({ colaborador, onAbrir, onRemover }) {
         </div>
 
         <div className="f30-colab-linha">
-          {Object.entries(colaborador.indicadores).map(([tipo, valor]) => (
+          {Object.entries(colaborador.indicadores || { tmo: 0, fcr: 0, qualidade: 0, retrabalho: 0 }).map(([tipo, valor]) => (
             <div className="f30-colab-mini-ind" key={tipo}>
               {ROTULOS_INDICADOR[tipo]}
               <b>{valor}{tipo === "tmo" ? "s" : "%"}</b>
@@ -498,16 +282,22 @@ function CardColaborador({ colaborador, onAbrir, onRemover }) {
           ))}
           <div className="f30-colab-mini-ind">
             Reconhecimentos
-            <b>{colaborador.reconhecimentos}</b>
+            <b>{colaborador.reconhecimentos || 0}</b>
           </div>
         </div>
 
-        <div className="f30-colab-foco"><b>Foco atual:</b> {colaborador.focoDesenvolvimento}</div>
+        {colaborador.focoDesenvolvimento && (
+          <div className="f30-colab-foco">
+            <b>Foco atual:</b> {colaborador.focoDesenvolvimento}
+          </div>
+        )}
 
-        <div className="f30-colab-footer">
-          <span>Último combinado: {colaborador.ultimaConversa.proximoPasso}</span>
-          <span className="f30-mono">{formatarData(colaborador.ultimaConversa.prazo)}</span>
-        </div>
+        {colaborador.ultimaConversa?.proximoPasso && (
+          <div className="f30-colab-footer">
+            <span>Último combinado: {colaborador.ultimaConversa.proximoPasso}</span>
+            <span className="f30-mono">{formatarData(colaborador.ultimaConversa.prazo)}</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -524,7 +314,10 @@ function PainelColaborador({ colaborador, feedbacks, checklists, reconhecimentos
         <div className="f30-painel-header">
           <div>
             <div className="f30-colab-nome" style={{ fontSize: 19 }}>{colaborador.nome}</div>
-            <div className="f30-colab-cargo">{colaborador.cargo}</div>
+            <div className="f30-colab-cargo">
+              {colaborador.cargo || "Colaborador(a)"}
+              {colaborador.supervisorNome ? ` · Supervisor(a): ${colaborador.supervisorNome}` : ""}
+            </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {onRemover && (
@@ -533,7 +326,7 @@ function PainelColaborador({ colaborador, feedbacks, checklists, reconhecimentos
                 className="f30-btn secundario pequeno"
                 style={{ color: "var(--bad)", borderColor: "var(--bad)" }}
                 onClick={() => {
-                  onRemover(colaborador.id, colaborador.nome);
+                  onRemover(colaborador.id, colaborador.nome, colaborador.uid);
                   onFechar();
                 }}
               >
@@ -547,7 +340,7 @@ function PainelColaborador({ colaborador, feedbacks, checklists, reconhecimentos
         <div className="f30-secao">
           <div className="f30-secao-titulo">Indicadores individuais</div>
           <div className="f30-grid f30-grid-4">
-            {Object.entries(colaborador.indicadores).map(([tipo, valor]) => (
+            {Object.entries(colaborador.indicadores || { tmo: 0, fcr: 0, qualidade: 0, retrabalho: 0 }).map(([tipo, valor]) => (
               <div className="f30-card" key={tipo} style={{ padding: 12 }}>
                 <div className="f30-kpi-label">{ROTULOS_INDICADOR[tipo]}</div>
                 <div className="f30-kpi-value" style={{ fontSize: 22 }}>{valor}<span>{tipo === "tmo" ? "s" : "%"}</span></div>
@@ -559,28 +352,9 @@ function PainelColaborador({ colaborador, feedbacks, checklists, reconhecimentos
         <div className="f30-secao">
           <div className="f30-secao-titulo">Pontos fortes e foco</div>
           <div className="f30-card">
-            <div className="f30-mel-field"><label>Pontos fortes</label><p>{colaborador.pontosFortes.join(" · ")}</p></div>
-            <div className="f30-mel-field" style={{ marginTop: 10 }}><label>Foco de desenvolvimento</label><p>{colaborador.focoDesenvolvimento}</p></div>
+            <div className="f30-mel-field"><label>Pontos fortes</label><p>{colaborador.pontosFortes?.length ? colaborador.pontosFortes.join(" · ") : "—"}</p></div>
+            <div className="f30-mel-field" style={{ marginTop: 10 }}><label>Foco de desenvolvimento</label><p>{colaborador.focoDesenvolvimento || "—"}</p></div>
           </div>
-        </div>
-
-        <div className="f30-secao">
-          <div className="f30-secao-titulo">Última conversa</div>
-          <div className="f30-card">
-            <div className="f30-mel-field"><label>Data</label><p className="f30-mono">{formatarData(colaborador.ultimaConversa.data)}</p></div>
-            <div className="f30-mel-field" style={{ marginTop: 10 }}><label>Resumo</label><p>{colaborador.ultimaConversa.resumo}</p></div>
-            <div className="f30-mel-field" style={{ marginTop: 10 }}><label>Próximo passo combinado</label><p>{colaborador.ultimaConversa.proximoPasso} — prazo {formatarData(colaborador.ultimaConversa.prazo)}</p></div>
-          </div>
-        </div>
-
-        <div className="f30-secao">
-          <div className="f30-secao-titulo">Reconhecimentos ({reconhecimentosDele.length})</div>
-          {reconhecimentosDele.length ? reconhecimentosDele.map((r) => (
-            <div className="f30-card" key={r.id} style={{ marginBottom: 8 }}>
-              <div className="f30-feed-meta">{formatarData(r.data)}</div>
-              <div style={{ fontSize: 13.5 }}>{r.descricao}</div>
-            </div>
-          )) : <div className="f30-vazio">Nenhum reconhecimento registrado ainda.</div>}
         </div>
 
         <div className="f30-secao">
@@ -616,20 +390,21 @@ function PainelColaborador({ colaborador, feedbacks, checklists, reconhecimentos
   );
 }
 
-function FormColaborador({ onSalvar, onCancelar, papel, supervisorPadrao }) {
+function FormColaborador({ onSalvar, onCancelar, supervisoresCadastrados }) {
+  // Todos os campos iniciam vazios ("") sem valores pré-definidos ou pré-selecionados
   const [form, setForm] = useState({
     nome: "",
-    cargo: "Atendente de Relacionamento",
-    supervisor: supervisorPadrao && supervisorPadrao !== "todas" ? supervisorPadrao : "Jaqueline",
+    cargo: "",
+    supervisorUid: "",
     pontosFortes: "",
     focoDesenvolvimento: "",
-    tmo: 320,
-    fcr: 85,
-    qualidade: 90,
-    retrabalho: 4,
-    emAcompanhamento: true,
-    proximoPasso: "Acompanhamento inicial de rotina.",
-    prazo: obterDataHojeISO(),
+    tmo: "",
+    fcr: "",
+    qualidade: "",
+    retrabalho: "",
+    emAcompanhamento: false,
+    proximoPasso: "",
+    prazo: "",
   });
 
   function atualizar(campo, valor) {
@@ -639,35 +414,32 @@ function FormColaborador({ onSalvar, onCancelar, papel, supervisorPadrao }) {
   function enviar(e) {
     e.preventDefault();
     if (!form.nome.trim()) return;
-    const partes = form.nome.trim().split(/\s+/);
-    const iniciais =
-      partes.length >= 2
-        ? (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
-        : form.nome.trim().slice(0, 2).toUpperCase();
+    const sup = supervisoresCadastrados.find((s) => s.uid === form.supervisorUid);
 
     const novo = {
       id: gerarId("c"),
       nome: form.nome.trim(),
-      cargo: form.cargo.trim() || "Atendente de Relacionamento",
-      supervisor: papel === "gestor" && supervisorPadrao ? supervisorPadrao : form.supervisor,
-      iniciais,
+      cargo: form.cargo.trim(),
+      supervisorUid: form.supervisorUid,
+      supervisorNome: sup ? sup.nome || sup.email : "",
+      iniciais: calcularIniciais(form.nome),
       pontosFortes: form.pontosFortes
         ? form.pontosFortes.split(",").map((s) => s.trim()).filter(Boolean)
-        : ["Comprometimento"],
-      focoDesenvolvimento: form.focoDesenvolvimento.trim() || "Evolução contínua de indicadores",
+        : [],
+      focoDesenvolvimento: form.focoDesenvolvimento.trim(),
       indicadores: {
-        tmo: Number(form.tmo) || 320,
-        fcr: Number(form.fcr) || 85,
-        qualidade: Number(form.qualidade) || 90,
-        retrabalho: Number(form.retrabalho) || 4,
+        tmo: Number(form.tmo) || 0,
+        fcr: Number(form.fcr) || 0,
+        qualidade: Number(form.qualidade) || 0,
+        retrabalho: Number(form.retrabalho) || 0,
       },
       reconhecimentos: 0,
       emAcompanhamento: Boolean(form.emAcompanhamento),
       ultimaConversa: {
         data: obterDataHojeISO(),
-        resumo: "Cadastro inicial no time.",
-        proximoPasso: form.proximoPasso.trim() || "Realizar 1:1 de boas-vindas.",
-        prazo: form.prazo || obterDataHojeISO(),
+        resumo: "",
+        proximoPasso: form.proximoPasso.trim(),
+        prazo: form.prazo,
       },
     };
     onSalvar(novo);
@@ -675,7 +447,7 @@ function FormColaborador({ onSalvar, onCancelar, papel, supervisorPadrao }) {
 
   return (
     <form className="f30-card f30-form" style={{ marginBottom: 18 }} onSubmit={enviar}>
-      <div className="f30-secao-titulo">Adicionar novo colaborador</div>
+      <div className="f30-secao-titulo">Adicionar colaborador ao banco</div>
       <div className="f30-grid f30-grid-3">
         <div>
           <label>Nome completo</label>
@@ -683,34 +455,36 @@ function FormColaborador({ onSalvar, onCancelar, papel, supervisorPadrao }) {
             type="text"
             value={form.nome}
             onChange={(e) => atualizar("nome", e.target.value)}
-            placeholder="Ex.: Lucas Martins"
+            placeholder="Digite o nome"
             required
           />
         </div>
         <div>
-          <label>Cargo</label>
+          <label>Cargo / Função</label>
           <input
             type="text"
             value={form.cargo}
             onChange={(e) => atualizar("cargo", e.target.value)}
-            placeholder="Ex.: Atendente de Relacionamento"
+            placeholder="Digite o cargo"
           />
         </div>
         <div>
-          <label>Supervisor(a) Responsável</label>
-          {papel === "coordenador" ? (
-            <select value={form.supervisor} onChange={(e) => atualizar("supervisor", e.target.value)}>
-              {LISTA_SUPERVISORES_HIERARQUIA.map((sup) => (
-                <option key={sup.id} value={sup.id}>{sup.nome}</option>
-              ))}
-            </select>
-          ) : (
-            <input
-              type="text"
-              value={LISTA_SUPERVISORES_HIERARQUIA.find((s) => s.id === supervisorPadrao)?.nome || supervisorPadrao || "Sua Equipe"}
-              disabled
-            />
-          )}
+          <label>Supervisor(a) Responsável (cadastrado no banco)</label>
+          <select
+            value={form.supervisorUid}
+            onChange={(e) => atualizar("supervisorUid", e.target.value)}
+          >
+            <option value="">
+              {supervisoresCadastrados.length > 0
+                ? "-- Selecione o(a) Supervisor(a) --"
+                : "-- Nenhum Supervisor cadastrado no banco --"}
+            </option>
+            {supervisoresCadastrados.map((sup) => (
+              <option key={sup.uid} value={sup.uid}>
+                {sup.nome || sup.email}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -721,7 +495,7 @@ function FormColaborador({ onSalvar, onCancelar, papel, supervisorPadrao }) {
             type="text"
             value={form.pontosFortes}
             onChange={(e) => atualizar("pontosFortes", e.target.value)}
-            placeholder="Ex.: Agilidade, Boa comunicação"
+            placeholder="Opcional"
           />
         </div>
         <div>
@@ -730,7 +504,7 @@ function FormColaborador({ onSalvar, onCancelar, papel, supervisorPadrao }) {
             type="text"
             value={form.focoDesenvolvimento}
             onChange={(e) => atualizar("focoDesenvolvimento", e.target.value)}
-            placeholder="Ex.: Reduzir TMO em check-in"
+            placeholder="Opcional"
           />
         </div>
       </div>
@@ -738,19 +512,19 @@ function FormColaborador({ onSalvar, onCancelar, papel, supervisorPadrao }) {
       <div className="f30-grid f30-grid-4" style={{ marginTop: 8 }}>
         <div>
           <label>TMO (s)</label>
-          <input type="text" value={form.tmo} onChange={(e) => atualizar("tmo", e.target.value)} />
+          <input type="text" value={form.tmo} onChange={(e) => atualizar("tmo", e.target.value)} placeholder="0" />
         </div>
         <div>
           <label>FCR (%)</label>
-          <input type="text" value={form.fcr} onChange={(e) => atualizar("fcr", e.target.value)} />
+          <input type="text" value={form.fcr} onChange={(e) => atualizar("fcr", e.target.value)} placeholder="0" />
         </div>
         <div>
           <label>Qualidade (%)</label>
-          <input type="text" value={form.qualidade} onChange={(e) => atualizar("qualidade", e.target.value)} />
+          <input type="text" value={form.qualidade} onChange={(e) => atualizar("qualidade", e.target.value)} placeholder="0" />
         </div>
         <div>
           <label>Retrabalho (%)</label>
-          <input type="text" value={form.retrabalho} onChange={(e) => atualizar("retrabalho", e.target.value)} />
+          <input type="text" value={form.retrabalho} onChange={(e) => atualizar("retrabalho", e.target.value)} placeholder="0" />
         </div>
       </div>
 
@@ -761,6 +535,7 @@ function FormColaborador({ onSalvar, onCancelar, papel, supervisorPadrao }) {
             type="text"
             value={form.proximoPasso}
             onChange={(e) => atualizar("proximoPasso", e.target.value)}
+            placeholder="Opcional"
           />
         </div>
         <div>
@@ -790,7 +565,15 @@ function FormColaborador({ onSalvar, onCancelar, papel, supervisorPadrao }) {
   );
 }
 
-function TelaTime({ colaboradores, feedbacks, checklists, reconhecimentos, onAdicionarColaborador, onRemoverColaborador, papel, supervisorPadrao }) {
+function TelaTime({
+  colaboradores,
+  feedbacks,
+  checklists,
+  reconhecimentos,
+  onAdicionarColaborador,
+  onRemoverColaborador,
+  supervisoresCadastrados,
+}) {
   const [selecionado, setSelecionado] = useState(null);
   const [mostrarForm, setMostrarForm] = useState(false);
 
@@ -798,9 +581,7 @@ function TelaTime({ colaboradores, feedbacks, checklists, reconhecimentos, onAdi
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div style={{ fontSize: 13, color: "var(--ink-soft)" }}>
-          {papel === "coordenador"
-            ? `Visão consolidada de todas as equipes (${colaboradores.length} colaboradores ativos).`
-            : `Gerencie os integrantes exclusivos da sua supervisão (${colaboradores.length} colaboradores ativos).`}
+          Integrantes cadastrados no banco de dados ({colaboradores.length} colaboradores).
         </div>
         <button className="f30-btn" onClick={() => setMostrarForm(!mostrarForm)}>
           {mostrarForm ? "Fechar formulário" : "+ Adicionar colaborador"}
@@ -809,8 +590,7 @@ function TelaTime({ colaboradores, feedbacks, checklists, reconhecimentos, onAdi
 
       {mostrarForm && (
         <FormColaborador
-          papel={papel}
-          supervisorPadrao={supervisorPadrao}
+          supervisoresCadastrados={supervisoresCadastrados}
           onCancelar={() => setMostrarForm(false)}
           onSalvar={(novo) => {
             onAdicionarColaborador(novo);
@@ -819,16 +599,23 @@ function TelaTime({ colaboradores, feedbacks, checklists, reconhecimentos, onAdi
         />
       )}
 
-      <div className="f30-grid f30-grid-2">
-        {colaboradores.map((c) => (
-          <CardColaborador
-            key={c.id}
-            colaborador={c}
-            onAbrir={setSelecionado}
-            onRemover={onRemoverColaborador}
-          />
-        ))}
-      </div>
+      {colaboradores.length === 0 ? (
+        <div className="f30-vazio">
+          Nenhum colaborador vinculado no momento. Quando um colaborador criar conta selecionando você como Supervisor(a) — ou quando você clicar em "+ Adicionar colaborador" — ele aparecerá aqui em tempo real.
+        </div>
+      ) : (
+        <div className="f30-grid f30-grid-2">
+          {colaboradores.map((c) => (
+            <CardColaborador
+              key={c.id}
+              colaborador={c}
+              onAbrir={setSelecionado}
+              onRemover={onRemoverColaborador}
+            />
+          ))}
+        </div>
+      )}
+
       {selecionado && (
         <PainelColaborador
           colaborador={selecionado}
@@ -843,52 +630,132 @@ function TelaTime({ colaboradores, feedbacks, checklists, reconhecimentos, onAdi
   );
 }
 
-function TelaRotina({ itens, onAlternarStatus }) {
+function TelaRotina({ itens, onAlternarStatus, onAdicionarItemRotina, onRemoverItemRotina }) {
+  const [blocoEscolhido, setBlocoEscolhido] = useState("");
+  const [textoNovo, setTextoNovo] = useState("");
+
+  function criar(e) {
+    e.preventDefault();
+    if (!blocoEscolhido || !textoNovo.trim()) return;
+    onAdicionarItemRotina(blocoEscolhido, textoNovo.trim());
+    setTextoNovo("");
+  }
+
   return (
-    <div className="f30-grid f30-grid-3">
-      {["hoje", "semana", "mes"].map((bloco) => (
-        <div className="f30-rotina-bloco" key={bloco}>
-          <h3>{NOMES_BLOCO[bloco]}</h3>
-          {itens[bloco].map((item) => (
-            <div className="f30-rotina-item" key={item.id} onClick={() => onAlternarStatus(bloco, item.id)}>
-              <div className={`f30-status-dot ${item.status}`} />
-              <div className={`f30-rotina-texto ${item.status === "concluido" ? "concluido" : ""}`}>{item.texto}</div>
-              <div className="f30-rotina-tag">{NOMES_STATUS_ITEM[item.status]}</div>
-            </div>
-          ))}
+    <>
+      <form className="f30-card f30-form" style={{ marginBottom: 18 }} onSubmit={criar}>
+        <div className="f30-secao-titulo">Adicionar item à sua rotina</div>
+        <div className="f30-grid f30-grid-3">
+          <div>
+            <label>Período</label>
+            <select value={blocoEscolhido} onChange={(e) => setBlocoEscolhido(e.target.value)} required>
+              <option value="">-- Selecione o período --</option>
+              <option value="hoje">Hoje</option>
+              <option value="semana">Esta semana</option>
+              <option value="mes">Este mês</option>
+            </select>
+          </div>
+          <div style={{ gridColumn: "span 2" }}>
+            <label>Atividade da rotina</label>
+            <input
+              type="text"
+              value={textoNovo}
+              onChange={(e) => setTextoNovo(e.target.value)}
+              placeholder="Digite a atividade que deseja acompanhar"
+              required
+            />
+          </div>
         </div>
-      ))}
-    </div>
+        <div className="f30-form-actions">
+          <button className="f30-btn pequeno" type="submit">+ Adicionar atividade</button>
+        </div>
+      </form>
+
+      <div className="f30-grid f30-grid-3">
+        {["hoje", "semana", "mes"].map((bloco) => {
+          const lista = Array.isArray(itens?.[bloco]) ? itens[bloco] : [];
+          return (
+            <div className="f30-rotina-bloco" key={bloco}>
+              <h3>{NOMES_BLOCO[bloco]} ({lista.length})</h3>
+              {lista.length === 0 ? (
+                <div className="f30-vazio" style={{ padding: 14 }}>Nenhuma atividade cadastrada.</div>
+              ) : (
+                lista.map((item) => (
+                  <div className="f30-rotina-item" key={item.id}>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, cursor: "pointer" }}
+                      onClick={() => onAlternarStatus(bloco, item.id)}
+                    >
+                      <div className={`f30-status-dot ${item.status}`} />
+                      <div className={`f30-rotina-texto ${item.status === "concluido" ? "concluido" : ""}`}>{item.texto}</div>
+                    </div>
+                    <div className="f30-rotina-tag" onClick={() => onAlternarStatus(bloco, item.id)} style={{ cursor: "pointer" }}>
+                      {NOMES_STATUS_ITEM[item.status]}
+                    </div>
+                    {onRemoverItemRotina && (
+                      <button
+                        type="button"
+                        className="f30-btn secundario pequeno"
+                        style={{ padding: "2px 6px", fontSize: 10, color: "var(--bad)", marginLeft: 4 }}
+                        onClick={() => onRemoverItemRotina(bloco, item.id)}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
 function FormMelhoria({ colaboradores, onSalvar, onCancelar }) {
-  const [form, setForm] = useState({ problema: "", causa: "", acao: "", responsavel: colaboradores[0]?.nome || "", prazo: "" });
-  function atualizar(campo, valor) { setForm({ ...form, [campo]: valor }); }
-  function enviar() {
-    if (!form.problema || !form.acao) return;
+  // Nenhuma pessoa pré-selecionada!
+  const [form, setForm] = useState({
+    problema: "",
+    causa: "",
+    acao: "",
+    responsavel: "",
+    prazo: "",
+  });
+
+  function atualizar(campo, valor) {
+    setForm({ ...form, [campo]: valor });
+  }
+
+  function enviar(e) {
+    e.preventDefault();
+    if (!form.problema.trim() || !form.acao.trim() || !form.responsavel) return;
     onSalvar(form);
   }
+
   return (
-    <div className="f30-card f30-form" style={{ marginBottom: 18 }}>
+    <form className="f30-card f30-form" style={{ marginBottom: 18 }} onSubmit={enviar}>
       <div className="f30-secao-titulo">Novo registro de melhoria</div>
       <label>Problema</label>
-      <input type="text" value={form.problema} onChange={(e) => atualizar("problema", e.target.value)} placeholder="Qual gargalo foi identificado?" />
+      <input type="text" value={form.problema} onChange={(e) => atualizar("problema", e.target.value)} placeholder="Qual gargalo foi identificado?" required />
       <label>Causa</label>
       <input type="text" value={form.causa} onChange={(e) => atualizar("causa", e.target.value)} placeholder="Por que isso acontece?" />
       <label>Ação</label>
-      <input type="text" value={form.acao} onChange={(e) => atualizar("acao", e.target.value)} placeholder="O que será feito?" />
-      <label>Responsável</label>
-      <select value={form.responsavel} onChange={(e) => atualizar("responsavel", e.target.value)}>
-        {colaboradores.map((c) => <option key={c.id} value={c.nome}>{c.nome}</option>)}
+      <input type="text" value={form.acao} onChange={(e) => atualizar("acao", e.target.value)} placeholder="O que será feito?" required />
+      <label>Responsável (cadastrado no banco)</label>
+      <select value={form.responsavel} onChange={(e) => atualizar("responsavel", e.target.value)} required>
+        <option value="">-- Selecione um responsável cadastrado --</option>
+        {colaboradores.map((c) => (
+          <option key={c.id} value={c.nome}>{c.nome}</option>
+        ))}
       </select>
       <label>Prazo</label>
       <input type="date" value={form.prazo} onChange={(e) => atualizar("prazo", e.target.value)} />
       <div className="f30-form-actions">
-        <button className="f30-btn" onClick={enviar}>Salvar registro</button>
-        <button className="f30-btn secundario" onClick={onCancelar}>Cancelar</button>
+        <button className="f30-btn" type="submit">Salvar registro</button>
+        <button className="f30-btn secundario" type="button" onClick={onCancelar}>Cancelar</button>
       </div>
-    </div>
+    </form>
   );
 }
 
@@ -914,76 +781,81 @@ function TelaMelhorias({ melhorias, colaboradores, onAdicionar, onConcluir, onRe
         <FormMelhoria colaboradores={colaboradores} onCancelar={() => setMostrarForm(false)} onSalvar={(form) => { onAdicionar(form); setMostrarForm(false); }} />
       )}
 
-      {melhorias.map((m) => (
-        <div className="f30-mel-card" key={m.id} style={{ marginBottom: 14 }}>
-          <div className="f30-mel-top">
-            <div style={{ fontWeight: 800, fontSize: 14.5 }}>{m.problema}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span className={`f30-mel-status ${m.status}`}>{m.status === "concluida" ? "CONCLUÍDA" : "EM ANDAMENTO"}</span>
-              {onRemover && (
-                <button
-                  type="button"
-                  className="f30-btn secundario pequeno"
-                  style={{ padding: "4px 8px", fontSize: 11, color: "var(--bad)", borderColor: "var(--bad-soft)" }}
-                  onClick={() => onRemover(m.id)}
-                >
-                  Remover
-                </button>
-              )}
+      {melhorias.length === 0 ? (
+        <div className="f30-vazio">Nenhum registro de melhoria cadastrado.</div>
+      ) : (
+        melhorias.map((m) => (
+          <div className="f30-mel-card" key={m.id} style={{ marginBottom: 14 }}>
+            <div className="f30-mel-top">
+              <div style={{ fontWeight: 800, fontSize: 14.5 }}>{m.problema}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span className={`f30-mel-status ${m.status}`}>{m.status === "concluida" ? "CONCLUÍDA" : "EM ANDAMENTO"}</span>
+                {onRemover && (
+                  <button
+                    type="button"
+                    className="f30-btn secundario pequeno"
+                    style={{ padding: "4px 8px", fontSize: 11, color: "var(--bad)", borderColor: "var(--bad-soft)" }}
+                    onClick={() => onRemover(m.id)}
+                  >
+                    Remover
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-          <div className="f30-mel-grid">
-            <div className="f30-mel-field"><label>Causa</label><p>{m.causa}</p></div>
-            <div className="f30-mel-field"><label>Ação</label><p>{m.acao}</p></div>
-            <div className="f30-mel-field"><label>Responsável</label><p>{m.responsavel}</p></div>
-            <div className="f30-mel-field"><label>Prazo</label><p className="f30-mono">{formatarData(m.prazo)}</p></div>
-            <div className="f30-mel-field"><label>Resultado</label><p>{m.resultado || "—"}</p></div>
-            <div className="f30-mel-field"><label>Aprendizado</label><p>{m.aprendizado || "—"}</p></div>
-          </div>
+            <div className="f30-mel-grid">
+              <div className="f30-mel-field"><label>Causa</label><p>{m.causa || "—"}</p></div>
+              <div className="f30-mel-field"><label>Ação</label><p>{m.acao}</p></div>
+              <div className="f30-mel-field"><label>Responsável</label><p>{m.responsavel}</p></div>
+              <div className="f30-mel-field"><label>Prazo</label><p className="f30-mono">{formatarData(m.prazo)}</p></div>
+              <div className="f30-mel-field"><label>Resultado</label><p>{m.resultado || "—"}</p></div>
+              <div className="f30-mel-field"><label>Aprendizado</label><p>{m.aprendizado || "—"}</p></div>
+            </div>
 
-          {m.status !== "concluida" && (
-            <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px dashed var(--line)" }}>
-              <label style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-soft)" }}>Registrar resultado e concluir</label>
-              <input
-                type="text" placeholder="Resultado observado"
-                style={{ width: "100%", marginTop: 6, padding: "8px 10px", borderRadius: 9, border: "1px solid var(--line)", fontSize: 13.5 }}
-                value={resultados[m.id]?.resultado || ""}
-                onChange={(e) => setResultados({ ...resultados, [m.id]: { ...resultados[m.id], resultado: e.target.value } })}
-              />
-              <input
-                type="text" placeholder="Aprendizado (opcional)"
-                style={{ width: "100%", marginTop: 8, padding: "8px 10px", borderRadius: 9, border: "1px solid var(--line)", fontSize: 13.5 }}
-                value={resultados[m.id]?.aprendizado || ""}
-                onChange={(e) => setResultados({ ...resultados, [m.id]: { ...resultados[m.id], aprendizado: e.target.value } })}
-              />
-              <button className="f30-btn pequeno" style={{ marginTop: 10 }} onClick={() => salvarConclusao(m.id)}>Marcar como concluída</button>
-            </div>
-          )}
-        </div>
-      ))}
+            {m.status !== "concluida" && (
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px dashed var(--line)" }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-soft)" }}>Registrar resultado e concluir</label>
+                <input
+                  type="text" placeholder="Resultado observado"
+                  style={{ width: "100%", marginTop: 6, padding: "8px 10px", borderRadius: 9, border: "1px solid var(--line)", fontSize: 13.5 }}
+                  value={resultados[m.id]?.resultado || ""}
+                  onChange={(e) => setResultados({ ...resultados, [m.id]: { ...resultados[m.id], resultado: e.target.value } })}
+                />
+                <input
+                  type="text" placeholder="Aprendizado (opcional)"
+                  style={{ width: "100%", marginTop: 8, padding: "8px 10px", borderRadius: 9, border: "1px solid var(--line)", fontSize: 13.5 }}
+                  value={resultados[m.id]?.aprendizado || ""}
+                  onChange={(e) => setResultados({ ...resultados, [m.id]: { ...resultados[m.id], aprendizado: e.target.value } })}
+                />
+                <button className="f30-btn pequeno" style={{ marginTop: 10 }} onClick={() => salvarConclusao(m.id)}>Marcar como concluída</button>
+              </div>
+            )}
+          </div>
+        ))
+      )}
     </>
   );
 }
 
 function TelaAgenda({ agenda, evolucoes, onEnviarEvolucao, onAdicionarCompromisso, onRemoverCompromisso, onRemoverEvolucao }) {
   const [texto, setTexto] = useState("");
-  const [periodo, setPeriodo] = useState("esta_semana");
+  const [periodo, setPeriodo] = useState("");
   const [mostrarFormAgenda, setMostrarFormAgenda] = useState(false);
-  const [novoCompromisso, setNovoCompromisso] = useState({ titulo: "", data: obterDataHojeISO(), hora: "10:00" });
+  const [novoCompromisso, setNovoCompromisso] = useState({ titulo: "", data: "", hora: "" });
 
   const agendaOrdenada = [...agenda].sort((a, b) => new Date(a.data) - new Date(b.data));
 
   function enviar() {
-    if (!texto.trim()) return;
+    if (!texto.trim() || !periodo) return;
     onEnviarEvolucao(texto, periodo);
     setTexto("");
+    setPeriodo("");
   }
 
   function salvarCompromisso(e) {
     e.preventDefault();
-    if (!novoCompromisso.titulo.trim()) return;
+    if (!novoCompromisso.titulo.trim() || !novoCompromisso.data) return;
     onAdicionarCompromisso(novoCompromisso);
-    setNovoCompromisso({ titulo: "", data: obterDataHojeISO(), hora: "10:00" });
+    setNovoCompromisso({ titulo: "", data: "", hora: "" });
     setMostrarFormAgenda(false);
   }
 
@@ -1006,7 +878,7 @@ function TelaAgenda({ agenda, evolucoes, onEnviarEvolucao, onAdicionarCompromiss
               type="text"
               value={novoCompromisso.titulo}
               onChange={(e) => setNovoCompromisso({ ...novoCompromisso, titulo: e.target.value })}
-              placeholder="Ex.: 1:1 — Renata Aquino"
+              placeholder="Digite o título do compromisso"
               required
             />
             <div className="f30-grid f30-grid-2">
@@ -1016,6 +888,7 @@ function TelaAgenda({ agenda, evolucoes, onEnviarEvolucao, onAdicionarCompromiss
                   type="date"
                   value={novoCompromisso.data}
                   onChange={(e) => setNovoCompromisso({ ...novoCompromisso, data: e.target.value })}
+                  required
                 />
               </div>
               <div>
@@ -1024,7 +897,7 @@ function TelaAgenda({ agenda, evolucoes, onEnviarEvolucao, onAdicionarCompromiss
                   type="text"
                   value={novoCompromisso.hora}
                   onChange={(e) => setNovoCompromisso({ ...novoCompromisso, hora: e.target.value })}
-                  placeholder="09:00"
+                  placeholder="Ex: 09:00"
                 />
               </div>
             </div>
@@ -1056,15 +929,16 @@ function TelaAgenda({ agenda, evolucoes, onEnviarEvolucao, onAdicionarCompromiss
       </div>
 
       <div>
-        <div className="f30-secao-titulo">Enviar evolução para a coordenadora</div>
+        <div className="f30-secao-titulo">Enviar evolução para a coordenação</div>
         <div className="f30-card f30-form">
           <label>Período de referência</label>
           <select value={periodo} onChange={(e) => setPeriodo(e.target.value)}>
+            <option value="">-- Selecione o período --</option>
             <option value="esta_semana">Esta semana</option>
             <option value="este_mes">Este mês</option>
           </select>
           <label>O que você quer contar sobre a evolução do time?</label>
-          <textarea value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Escreva livremente sobre indicadores, ações e destaques do período..." />
+          <textarea value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Escreva sobre indicadores, ações e destaques do período..." />
           <div className="f30-form-actions">
             <button className="f30-btn" onClick={enviar}>Enviar atualização</button>
           </div>
@@ -1074,7 +948,7 @@ function TelaAgenda({ agenda, evolucoes, onEnviarEvolucao, onAdicionarCompromiss
         {evolucoes.length ? [...evolucoes].reverse().map((e) => (
           <div className="f30-card" key={e.id} style={{ marginBottom: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-              <div className="f30-feed-meta" style={{ margin: 0 }}>{e.periodo === "esta_semana" ? "Esta semana" : "Este mês"} · {formatarData(e.data)} · {e.status === "enviado" ? "Enviado" : "Lido"}</div>
+              <div className="f30-feed-meta" style={{ margin: 0 }}>{e.periodo === "esta_semana" ? "Esta semana" : "Este mês"} · {formatarData(e.data)} · {e.autor || ""}</div>
               {onRemoverEvolucao && (
                 <button
                   type="button"
@@ -1095,16 +969,22 @@ function TelaAgenda({ agenda, evolucoes, onEnviarEvolucao, onAdicionarCompromiss
 }
 
 function TelaFeedback({ colaboradores, feedbacks, onEnviarFeedback, onResponder, onRemoverFeedback, papel, colaboradorLogadoId }) {
-  const [colaboradorId, setColaboradorId] = useState(colaboradores[0]?.id);
+  // Nenhuma opção pré-selecionada ("")
+  const [colaboradorId, setColaboradorId] = useState("");
   const [texto, setTexto] = useState("");
   const [respostas, setRespostas] = useState({});
 
-  const temAcessoTotal = papel === "gestor" || papel === "coordenador";
-  const listaVisivel = temAcessoTotal ? colaboradores : colaboradores.filter((c) => c.id === colaboradorLogadoId);
-  const feedbacksDoColaborador = feedbacks.filter((f) => f.colaboradorId === (temAcessoTotal ? colaboradorId : colaboradorLogadoId));
+  const temAcessoGestao = papel === "gestor" || papel === "coordenador";
+  const feedbacksExibidos = useMemo(() => {
+    if (!temAcessoGestao) {
+      return feedbacks.filter((f) => f.colaboradorId === colaboradorLogadoId);
+    }
+    if (!colaboradorId) return feedbacks;
+    return feedbacks.filter((f) => f.colaboradorId === colaboradorId);
+  }, [feedbacks, temAcessoGestao, colaboradorId, colaboradorLogadoId]);
 
   function enviar() {
-    if (!texto.trim()) return;
+    if (!colaboradorId || !texto.trim()) return;
     onEnviarFeedback(colaboradorId, texto);
     setTexto("");
   }
@@ -1118,16 +998,17 @@ function TelaFeedback({ colaboradores, feedbacks, onEnviarFeedback, onResponder,
 
   return (
     <div className="f30-grid f30-grid-2">
-      {temAcessoTotal && (
+      {temAcessoGestao && (
         <div>
           <div className="f30-secao-titulo">Novo feedback</div>
           <div className="f30-card f30-form">
-            <label>Colaborador</label>
+            <label>Colaborador (cadastrado no banco)</label>
             <select value={colaboradorId} onChange={(e) => setColaboradorId(e.target.value)}>
+              <option value="">-- Selecione o(a) Colaborador(a) --</option>
               {colaboradores.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
             </select>
             <label>Feedback</label>
-            <textarea value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Escreva o feedback logo após a conversa, enquanto está fresco..." />
+            <textarea value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Escreva o feedback..." />
             <div className="f30-form-actions">
               <button className="f30-btn" onClick={enviar}>Enviar feedback</button>
             </div>
@@ -1137,13 +1018,19 @@ function TelaFeedback({ colaboradores, feedbacks, onEnviarFeedback, onResponder,
 
       <div>
         <div className="f30-secao-titulo">
-          {temAcessoTotal ? `Linha do tempo — ${colaboradores.find((c) => c.id === colaboradorId)?.nome}` : "Meus feedbacks"}
+          {temAcessoGestao
+            ? colaboradorId
+              ? `Feedbacks — ${colaboradores.find((c) => c.id === colaboradorId)?.nome || ""}`
+              : "Todos os feedbacks da equipe"
+            : "Meus feedbacks"}
         </div>
-        {feedbacksDoColaborador.length ? [...feedbacksDoColaborador].reverse().map((f) => (
+        {feedbacksExibidos.length ? [...feedbacksExibidos].reverse().map((f) => (
           <div className="f30-feed-item" key={f.id}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <div className="f30-feed-meta" style={{ margin: 0 }}>{f.autor} · {formatarData(f.data)}</div>
-              {temAcessoTotal && onRemoverFeedback && (
+              <div className="f30-feed-meta" style={{ margin: 0 }}>
+                {f.autor} → <b>{colaboradores.find((c) => c.id === f.colaboradorId)?.nome || ""}</b> · {formatarData(f.data)}
+              </div>
+              {temAcessoGestao && onRemoverFeedback && (
                 <button
                   type="button"
                   className="f30-btn secundario pequeno"
@@ -1181,35 +1068,43 @@ function TelaFeedback({ colaboradores, feedbacks, onEnviarFeedback, onResponder,
 }
 
 function TelaChecklistAtraso({ colaboradores, checklists, onRegistrar, onRemoverAtraso }) {
-  const [colaboradorId, setColaboradorId] = useState(colaboradores[0]?.id);
-  const [data, setData] = useState(obterDataHojeISO());
+  // Sem colaborador pré-selecionado ("")
+  const [colaboradorId, setColaboradorId] = useState("");
+  const [data, setData] = useState("");
   const [motivos, setMotivos] = useState([]);
   const [observacao, setObservacao] = useState("");
-  const [filtroColaborador, setFiltroColaborador] = useState("todos");
+  const [filtroColaborador, setFiltroColaborador] = useState("");
 
   function alternarMotivo(m) {
     setMotivos(motivos.includes(m) ? motivos.filter((x) => x !== m) : [...motivos, m]);
   }
 
   function registrar() {
-    if (!motivos.length) return;
+    if (!colaboradorId || !data || !motivos.length) return;
     onRegistrar({ colaboradorId, data, motivos, observacao });
+    setColaboradorId("");
+    setData("");
     setMotivos([]);
     setObservacao("");
   }
 
-  const listaFiltrada = filtroColaborador === "todos" ? checklists : checklists.filter((c) => c.colaboradorId === filtroColaborador);
+  const listaFiltrada = !filtroColaborador
+    ? checklists
+    : checklists.filter((c) => c.colaboradorId === filtroColaborador);
   const listaOrdenada = [...listaFiltrada].sort((a, b) => new Date(b.data) - new Date(a.data));
 
-  function nomeColaborador(id) { return colaboradores.find((c) => c.id === id)?.nome || "—"; }
+  function nomeColaborador(id) {
+    return colaboradores.find((c) => c.id === id)?.nome || "—";
+  }
 
   return (
     <div className="f30-grid f30-grid-2">
       <div>
         <div className="f30-secao-titulo">Registrar atraso</div>
         <div className="f30-card f30-form">
-          <label>Colaborador</label>
+          <label>Colaborador (cadastrado no banco)</label>
           <select value={colaboradorId} onChange={(e) => setColaboradorId(e.target.value)}>
+            <option value="">-- Selecione o(a) Colaborador(a) --</option>
             {colaboradores.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
           </select>
           <label>Data</label>
@@ -1233,7 +1128,7 @@ function TelaChecklistAtraso({ colaboradores, checklists, onRegistrar, onRemover
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <div className="f30-secao-titulo" style={{ margin: 0 }}>Histórico</div>
           <select className="f30-select-inline" value={filtroColaborador} onChange={(e) => setFiltroColaborador(e.target.value)}>
-            <option value="todos">Todos os colaboradores</option>
+            <option value="">Todos os colaboradores</option>
             {colaboradores.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
           </select>
         </div>
@@ -1268,52 +1163,44 @@ function TelaPerfil({
   usuario,
   papel,
   dadosPerfil,
-  supervisorAtivo,
-  colaboradorVinculado,
+  coordenadoresCadastrados,
+  supervisoresCadastrados,
   onSalvarPerfil,
-  onAtualizarColaborador,
 }) {
   const [form, setForm] = useState({
-    nome: dadosPerfil?.nome || colaboradorVinculado?.nome || "",
-    cargo:
-      dadosPerfil?.cargo ||
-      colaboradorVinculado?.cargo ||
-      (papel === "coordenador"
-        ? "Coordenador(a) Geral"
-        : papel === "gestor"
-        ? "Supervisor(a) de Operações"
-        : "Atendente de Relacionamento"),
-    supervisorVinculado: dadosPerfil?.supervisorVinculado || supervisorAtivo || "Jaqueline",
+    nome: dadosPerfil?.nome || "",
+    cargo: dadosPerfil?.cargo || "",
+    coordenadorUid: dadosPerfil?.coordenadorUid || "",
+    supervisorUid: dadosPerfil?.supervisorUid || "",
     matricula: dadosPerfil?.matricula || "",
-    turno: dadosPerfil?.turno || "08:00 às 17:00",
+    turno: dadosPerfil?.turno || "",
     telefone: dadosPerfil?.telefone || "",
-    focoIndividual:
-      colaboradorVinculado?.focoDesenvolvimento ||
-      dadosPerfil?.focoIndividual ||
-      "Manter excelência em qualidade e cumprimento de metas.",
-    pontosFortes: colaboradorVinculado?.pontosFortes?.join(", ") || "Comprometimento, Qualidade no atendimento",
-    tmo: colaboradorVinculado?.indicadores?.tmo ?? 315,
-    fcr: colaboradorVinculado?.indicadores?.fcr ?? 88,
-    qualidade: colaboradorVinculado?.indicadores?.qualidade ?? 95,
-    retrabalho: colaboradorVinculado?.indicadores?.retrabalho ?? 3,
+    focoIndividual: dadosPerfil?.focoIndividual || "",
+    pontosFortes: Array.isArray(dadosPerfil?.pontosFortes) ? dadosPerfil.pontosFortes.join(", ") : "",
+    tmo: dadosPerfil?.indicadores?.tmo ?? "",
+    fcr: dadosPerfil?.indicadores?.fcr ?? "",
+    qualidade: dadosPerfil?.indicadores?.qualidade ?? "",
+    retrabalho: dadosPerfil?.indicadores?.retrabalho ?? "",
   });
 
-  // Sincroniza quando dadosPerfil ou colaboradorVinculado mudarem em tempo real
   useEffect(() => {
-    setForm((prev) => ({
-      ...prev,
-      nome: dadosPerfil?.nome || colaboradorVinculado?.nome || prev.nome,
-      cargo: dadosPerfil?.cargo || colaboradorVinculado?.cargo || prev.cargo,
-      supervisorVinculado: dadosPerfil?.supervisorVinculado || supervisorAtivo || prev.supervisorVinculado,
-      matricula: dadosPerfil?.matricula ?? prev.matricula,
-      turno: dadosPerfil?.turno || prev.turno,
-      telefone: dadosPerfil?.telefone ?? prev.telefone,
-      focoIndividual:
-        colaboradorVinculado?.focoDesenvolvimento ||
-        dadosPerfil?.focoIndividual ||
-        prev.focoIndividual,
-    }));
-  }, [dadosPerfil, colaboradorVinculado, supervisorAtivo]);
+    if (!dadosPerfil) return;
+    setForm({
+      nome: dadosPerfil.nome || "",
+      cargo: dadosPerfil.cargo || "",
+      coordenadorUid: dadosPerfil.coordenadorUid || "",
+      supervisorUid: dadosPerfil.supervisorUid || "",
+      matricula: dadosPerfil.matricula || "",
+      turno: dadosPerfil.turno || "",
+      telefone: dadosPerfil.telefone || "",
+      focoIndividual: dadosPerfil.focoIndividual || "",
+      pontosFortes: Array.isArray(dadosPerfil.pontosFortes) ? dadosPerfil.pontosFortes.join(", ") : "",
+      tmo: dadosPerfil.indicadores?.tmo ?? "",
+      fcr: dadosPerfil.indicadores?.fcr ?? "",
+      qualidade: dadosPerfil.indicadores?.qualidade ?? "",
+      retrabalho: dadosPerfil.indicadores?.retrabalho ?? "",
+    });
+  }, [dadosPerfil]);
 
   function atualizar(campo, valor) {
     setForm((prev) => ({ ...prev, [campo]: valor }));
@@ -1324,50 +1211,31 @@ function TelaPerfil({
     await onSalvarPerfil({
       nome: form.nome.trim(),
       cargo: form.cargo.trim(),
-      supervisorVinculado: form.supervisorVinculado,
+      coordenadorUid: papel !== "coordenador" ? form.coordenadorUid : "",
+      supervisorUid: papel === "colaborador" ? form.supervisorUid : "",
       matricula: form.matricula.trim(),
       turno: form.turno.trim(),
       telefone: form.telefone.trim(),
       focoIndividual: form.focoIndividual.trim(),
+      pontosFortes: form.pontosFortes
+        ? form.pontosFortes.split(",").map((s) => s.trim()).filter(Boolean)
+        : [],
+      indicadores: {
+        tmo: Number(form.tmo) || 0,
+        fcr: Number(form.fcr) || 0,
+        qualidade: Number(form.qualidade) || 0,
+        retrabalho: Number(form.retrabalho) || 0,
+      },
     });
-
-    if (colaboradorVinculado && onAtualizarColaborador) {
-      const partes = (form.nome.trim() || colaboradorVinculado.nome).split(/\s+/);
-      const iniciais =
-        partes.length >= 2
-          ? (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
-          : (form.nome.trim() || colaboradorVinculado.nome).slice(0, 2).toUpperCase();
-
-      onAtualizarColaborador(colaboradorVinculado.id, {
-        nome: form.nome.trim() || colaboradorVinculado.nome,
-        cargo: form.cargo.trim() || colaboradorVinculado.cargo,
-        supervisor: form.supervisorVinculado || colaboradorVinculado.supervisor,
-        iniciais,
-        focoDesenvolvimento: form.focoIndividual.trim() || colaboradorVinculado.focoDesenvolvimento,
-        pontosFortes: form.pontosFortes
-          ? form.pontosFortes.split(",").map((s) => s.trim()).filter(Boolean)
-          : colaboradorVinculado.pontosFortes,
-        indicadores: {
-          tmo: Number(form.tmo) || colaboradorVinculado.indicadores.tmo,
-          fcr: Number(form.fcr) || colaboradorVinculado.indicadores.fcr,
-          qualidade: Number(form.qualidade) || colaboradorVinculado.indicadores.qualidade,
-          retrabalho: Number(form.retrabalho) || colaboradorVinculado.indicadores.retrabalho,
-        },
-      });
-    }
   }
 
-  const nomeExibicao = form.nome || usuario?.email?.split("@")[0] || "Usuário";
-  const partesNome = nomeExibicao.trim().split(/\s+/);
-  const iniciaisAvatar =
-    partesNome.length >= 2
-      ? (partesNome[0][0] + partesNome[partesNome.length - 1][0]).toUpperCase()
-      : nomeExibicao.slice(0, 2).toUpperCase();
+  const nomeExibicao = form.nome || usuario?.email || "Usuário";
+  const iniciaisAvatar = calcularIniciais(nomeExibicao);
 
   return (
     <div className="f30-grid f30-grid-2">
       <div>
-        <div className="f30-secao-titulo">Cartão de Identidade & Hierarquia (Tempo Real)</div>
+        <div className="f30-secao-titulo">Meu Perfil no Banco de Dados (Tempo Real)</div>
         <div className="f30-card" style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
             <div
@@ -1378,7 +1246,7 @@ function TelaPerfil({
             </div>
             <div>
               <div style={{ fontSize: 18, fontWeight: 800, color: "#0F172A" }}>{nomeExibicao}</div>
-              <div style={{ fontSize: 13, color: "var(--ink-soft)" }}>{form.cargo}</div>
+              <div style={{ fontSize: 13, color: "var(--ink-soft)" }}>{form.cargo || "Sem cargo informado"}</div>
               <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
                 <span
                   style={{
@@ -1391,23 +1259,11 @@ function TelaPerfil({
                     border: "1px solid #FDBA74",
                   }}
                 >
-                  {papel === "coordenador"
-                    ? "NÍVEL 1 · COORDENADOR(A) GERAL"
+                  PATENTE: {papel === "coordenador"
+                    ? "COORDENADOR(A) GERAL"
                     : papel === "gestor"
-                    ? "NÍVEL 2 · SUPERVISOR(A)"
-                    : "NÍVEL 3 · COLABORADOR(A)"}
-                </span>
-                <span
-                  style={{
-                    fontSize: 10.5,
-                    fontWeight: 700,
-                    padding: "3px 8px",
-                    borderRadius: 999,
-                    background: "#DCFCE7",
-                    color: "#166534",
-                  }}
-                >
-                  ✓ E-mail Verificado & Salvo em Tempo Real
+                    ? "GESTOR(A) / SUPERVISOR(A)"
+                    : "COLABORADOR(A)"}
                 </span>
               </div>
             </div>
@@ -1415,45 +1271,52 @@ function TelaPerfil({
 
           <div className="f30-mel-grid" style={{ marginTop: 12 }}>
             <div className="f30-mel-field">
-              <label>E-mail Corporativo</label>
+              <label>E-mail Cadastrado</label>
               <p className="f30-mono">{usuario?.email || "—"}</p>
             </div>
+            {papel !== "coordenador" && (
+              <div className="f30-mel-field">
+                <label>Coordenador(a) Geral Vinculado</label>
+                <p style={{ fontWeight: 700 }}>
+                  {coordenadoresCadastrados.find((c) => c.uid === form.coordenadorUid)?.nome ||
+                    dadosPerfil?.coordenadorNome ||
+                    "Não selecionado"}
+                </p>
+              </div>
+            )}
+            {papel === "colaborador" && (
+              <div className="f30-mel-field">
+                <label>Supervisor(a) / Gestor(a) Vinculado</label>
+                <p style={{ fontWeight: 700, color: "#EA580C" }}>
+                  {supervisoresCadastrados.find((s) => s.uid === form.supervisorUid)?.nome ||
+                    dadosPerfil?.supervisorNome ||
+                    "Não selecionado"}
+                </p>
+              </div>
+            )}
             <div className="f30-mel-field">
-              <label>Supervisão / Equipe</label>
-              <p style={{ fontWeight: 700, color: "#EA580C" }}>
-                {papel === "coordenador"
-                  ? "Coordenação Geral (Todas as 8 Equipes)"
-                  : LISTA_SUPERVISORES_HIERARQUIA.find((s) => s.id === form.supervisorVinculado)?.nome ||
-                    form.supervisorVinculado}
-              </p>
+              <label>Turno / Escala</label>
+              <p className="f30-mono">{form.turno || "—"}</p>
             </div>
             <div className="f30-mel-field">
-              <label>Turno / Escala Atual</label>
-              <p className="f30-mono">{form.turno || "08:00 às 17:00"}</p>
+              <label>Matrícula / Ramal</label>
+              <p className="f30-mono">{form.matricula || "—"}</p>
             </div>
-            <div className="f30-mel-field">
-              <label>Matrícula / Login</label>
-              <p className="f30-mono">{form.matricula || "Não informada"}</p>
-            </div>
-          </div>
-
-          <div className="f30-colab-foco" style={{ marginTop: 14 }}>
-            <b>Foco / Meta Individual Atual:</b> {form.focoIndividual}
           </div>
         </div>
       </div>
 
       <div>
-        <div className="f30-secao-titulo">Editar Meu Perfil (Sincronização Instantânea)</div>
+        <div className="f30-secao-titulo">Atualizar Meus Dados no Banco</div>
         <form className="f30-card f30-form" onSubmit={salvar}>
           <div className="f30-grid f30-grid-2">
             <div>
-              <label>Seu nome completo</label>
+              <label>Nome completo</label>
               <input
                 type="text"
                 value={form.nome}
                 onChange={(e) => atualizar("nome", e.target.value)}
-                placeholder="Ex.: Jaqueline Rocha Lima"
+                placeholder="Seu nome completo"
                 required
               />
             </div>
@@ -1463,36 +1326,58 @@ function TelaPerfil({
                 type="text"
                 value={form.cargo}
                 onChange={(e) => atualizar("cargo", e.target.value)}
-                placeholder="Ex.: Supervisora de Operações"
+                placeholder="Digite seu cargo"
               />
             </div>
           </div>
 
-          <div className="f30-grid f30-grid-3" style={{ marginTop: 8 }}>
-            <div>
-              <label>Equipe / Supervisão</label>
-              {papel === "coordenador" ? (
-                <input type="text" value="Todas as 8 Supervisões" disabled />
-              ) : (
-                <select
-                  value={form.supervisorVinculado}
-                  onChange={(e) => atualizar("supervisorVinculado", e.target.value)}
-                >
-                  {LISTA_SUPERVISORES_HIERARQUIA.map((sup) => (
-                    <option key={sup.id} value={sup.id}>
-                      {sup.nome}
-                    </option>
-                  ))}
-                </select>
-              )}
+          {/* Vínculo hierárquico: exibe apenas pessoas cadastradas no banco com a respectiva Patente */}
+          {papel === "colaborador" && (
+            <div style={{ marginTop: 8 }}>
+              <label>Meu(Minha) Gestor(a) / Supervisor(a) (cadastrado no banco com essa patente)</label>
+              <select
+                value={form.supervisorUid}
+                onChange={(e) => atualizar("supervisorUid", e.target.value)}
+              >
+                <option value="">
+                  {supervisoresCadastrados.length > 0
+                    ? "-- Selecione o(a) Supervisor(a) cadastrado(a) --"
+                    : "-- Nenhum(a) Supervisor(a) cadastrado(a) no banco --"}
+                </option>
+                {supervisoresCadastrados.map((sup) => (
+                  <option key={sup.uid} value={sup.uid}>
+                    {sup.nome || sup.email}
+                  </option>
+                ))}
+              </select>
             </div>
+          )}
+
+          {(papel === "gestor" || papel === "colaborador") && coordenadoresCadastrados.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <label>Meu(Minha) Coordenador(a) Geral (cadastrado no banco com essa patente)</label>
+              <select
+                value={form.coordenadorUid}
+                onChange={(e) => atualizar("coordenadorUid", e.target.value)}
+              >
+                <option value="">-- Selecione o(a) Coordenador(a) Geral cadastrado(a) --</option>
+                {coordenadoresCadastrados.map((coord) => (
+                  <option key={coord.uid} value={coord.uid}>
+                    {coord.nome || coord.email}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="f30-grid f30-grid-2" style={{ marginTop: 8 }}>
             <div>
               <label>Turno / Horário</label>
               <input
                 type="text"
                 value={form.turno}
                 onChange={(e) => atualizar("turno", e.target.value)}
-                placeholder="Ex.: 08:00 às 17:00"
+                placeholder="Digite seu horário"
               />
             </div>
             <div>
@@ -1501,7 +1386,7 @@ function TelaPerfil({
                 type="text"
                 value={form.matricula}
                 onChange={(e) => atualizar("matricula", e.target.value)}
-                placeholder="Ex.: GOL-4821"
+                placeholder="Digite sua matrícula"
               />
             </div>
           </div>
@@ -1511,33 +1396,34 @@ function TelaPerfil({
             type="text"
             value={form.focoIndividual}
             onChange={(e) => atualizar("focoIndividual", e.target.value)}
-            placeholder="Qual seu principal objetivo neste ciclo?"
+            placeholder="Digite seu foco atual"
           />
 
-          {colaboradorVinculado && (
+          {papel === "colaborador" && (
             <>
               <label style={{ marginTop: 8 }}>Pontos fortes (separados por vírgula)</label>
               <input
                 type="text"
                 value={form.pontosFortes}
                 onChange={(e) => atualizar("pontosFortes", e.target.value)}
+                placeholder="Opcional"
               />
               <div className="f30-grid f30-grid-4" style={{ marginTop: 8 }}>
                 <div>
                   <label>TMO (s)</label>
-                  <input type="text" value={form.tmo} onChange={(e) => atualizar("tmo", e.target.value)} />
+                  <input type="text" value={form.tmo} onChange={(e) => atualizar("tmo", e.target.value)} placeholder="0" />
                 </div>
                 <div>
                   <label>FCR (%)</label>
-                  <input type="text" value={form.fcr} onChange={(e) => atualizar("fcr", e.target.value)} />
+                  <input type="text" value={form.fcr} onChange={(e) => atualizar("fcr", e.target.value)} placeholder="0" />
                 </div>
                 <div>
                   <label>Qualidade (%)</label>
-                  <input type="text" value={form.qualidade} onChange={(e) => atualizar("qualidade", e.target.value)} />
+                  <input type="text" value={form.qualidade} onChange={(e) => atualizar("qualidade", e.target.value)} placeholder="0" />
                 </div>
                 <div>
                   <label>Retrabalho (%)</label>
-                  <input type="text" value={form.retrabalho} onChange={(e) => atualizar("retrabalho", e.target.value)} />
+                  <input type="text" value={form.retrabalho} onChange={(e) => atualizar("retrabalho", e.target.value)} placeholder="0" />
                 </div>
               </div>
             </>
@@ -1545,7 +1431,7 @@ function TelaPerfil({
 
           <div className="f30-form-actions" style={{ marginTop: 14 }}>
             <button className="f30-btn" type="submit">
-              Salvar perfil em tempo real
+              Salvar perfil no banco de dados
             </button>
           </div>
         </form>
@@ -1560,70 +1446,79 @@ export default function App() {
   const {
     usuario,
     perfilUsuario,
-    supervisorVinculado,
     nomeUsuario,
     dadosPerfil,
+    coordenadoresCadastrados,
+    supervisoresCadastrados,
+    colaboradoresCadastrados,
     atualizarMeuPerfil,
+    removerUsuarioDoBanco,
     sair,
   } = useAuth();
-  const papel = perfilUsuario || "gestor";
-  const supervisorAtivo =
-    papel === "coordenador"
-      ? "todas"
-      : supervisorVinculado && supervisorVinculado !== "todas"
-      ? supervisorVinculado
-      : "Jaqueline";
 
-  const [aba, setAba] = useState(papel === "coordenador" ? "coordenacao" : "inicio");
+  // A patente vem estritamente do que está salvo no banco de dados para o usuário logado
+  const papel = perfilUsuario || "";
 
-  // Inicializa TODOS os estados a partir do armazenamento persistido (nunca volta dados apagados ao dar F5)
-  const [colaboradores, setColaboradores] = useState(() => {
+  const [aba, setAba] = useState("inicio");
+
+  // Estados iniciam limpos (ou do cache real salvo), NUNCA com dados fictícios pré-definidos
+  const [colaboradoresExtras, setColaboradoresExtras] = useState(() => {
     const salvo = lerEstadoLocal();
-    return Array.isArray(salvo?.colaboradores) ? salvo.colaboradores : COLABORADORES_INICIAIS;
+    return Array.isArray(salvo?.colaboradoresExtras) ? salvo.colaboradoresExtras : [];
+  });
+  const [idsExcluidos, setIdsExcluidos] = useState(() => {
+    const salvo = lerEstadoLocal();
+    return Array.isArray(salvo?.idsExcluidos) ? salvo.idsExcluidos : [];
   });
   const [itensRotina, setItensRotina] = useState(() => {
     const salvo = lerEstadoLocal();
     return salvo?.itensRotina && typeof salvo.itensRotina === "object"
       ? salvo.itensRotina
-      : ITENS_ROTINA_INICIAIS;
+      : ROTINA_VAZIA;
   });
   const [melhorias, setMelhorias] = useState(() => {
     const salvo = lerEstadoLocal();
-    return Array.isArray(salvo?.melhorias) ? salvo.melhorias : MELHORIAS_INICIAIS;
+    return Array.isArray(salvo?.melhorias) ? salvo.melhorias : [];
   });
   const [reconhecimentos, setReconhecimentos] = useState(() => {
     const salvo = lerEstadoLocal();
-    return Array.isArray(salvo?.reconhecimentos) ? salvo.reconhecimentos : RECONHECIMENTOS_INICIAIS;
+    return Array.isArray(salvo?.reconhecimentos) ? salvo.reconhecimentos : [];
   });
   const [agenda, setAgenda] = useState(() => {
     const salvo = lerEstadoLocal();
-    return Array.isArray(salvo?.agenda) ? salvo.agenda : AGENDA_INICIAL;
+    return Array.isArray(salvo?.agenda) ? salvo.agenda : [];
   });
   const [evolucoes, setEvolucoes] = useState(() => {
     const salvo = lerEstadoLocal();
-    return Array.isArray(salvo?.evolucoes) ? salvo.evolucoes : EVOLUCOES_INICIAIS;
+    return Array.isArray(salvo?.evolucoes) ? salvo.evolucoes : [];
   });
   const [feedbacks, setFeedbacks] = useState(() => {
     const salvo = lerEstadoLocal();
-    return Array.isArray(salvo?.feedbacks) ? salvo.feedbacks : FEEDBACKS_INICIAIS;
+    return Array.isArray(salvo?.feedbacks) ? salvo.feedbacks : [];
   });
   const [checklists, setChecklists] = useState(() => {
     const salvo = lerEstadoLocal();
-    return Array.isArray(salvo?.checklists) ? salvo.checklists : CHECKLIST_ATRASO_INICIAL;
+    return Array.isArray(salvo?.checklists) ? salvo.checklists : [];
+  });
+  const [dadosCoordenacao, setDadosCoordenacao] = useState(() => {
+    const salvo = lerEstadoLocal();
+    return salvo?.dadosCoordenacao && typeof salvo.dadosCoordenacao === "object"
+      ? salvo.dadosCoordenacao
+      : {};
   });
 
-  const [analise, setAnalise] = useState(null);
   const [toast, setToast] = useState(null);
   const [firestoreOnline, setFirestoreOnline] = useState(false);
 
-  // Separação estrita de abas por Nível Hierárquico + Aba "Meu Perfil" individual para todos
+  // Abas visíveis estritamente conforme a Patente cadastrada no banco de dados
   const abasVisiveis = useMemo(() => {
     if (papel === "coordenador") {
+      // A aba Coordenação só aparece para quem está cadastrado no banco com a patente "coordenador"
       return [
-        { id: "coordenacao", rotulo: "Coordenação (One Page)" },
+        { id: "coordenacao", rotulo: "Coordenação" },
         { id: "inicio", rotulo: "Visão Geral" },
-        { id: "time", rotulo: "Todas as Equipes" },
-        { id: "melhorias", rotulo: "Melhorias (Geral)" },
+        { id: "time", rotulo: "Equipes Cadastradas" },
+        { id: "melhorias", rotulo: "Melhorias" },
         { id: "agenda", rotulo: "Agenda & Evoluções" },
         { id: "feedback", rotulo: "Feedbacks" },
         { id: "checklist", rotulo: "Checklist de Atraso" },
@@ -1632,7 +1527,7 @@ export default function App() {
     }
     if (papel === "gestor") {
       return [
-        { id: "inicio", rotulo: "Início (Minha Equipe)" },
+        { id: "inicio", rotulo: "Início" },
         { id: "time", rotulo: "Meu Time" },
         { id: "rotina", rotulo: "Minha Rotina" },
         { id: "melhorias", rotulo: "Melhorias" },
@@ -1642,6 +1537,7 @@ export default function App() {
         { id: "perfil", rotulo: "Meu Perfil" },
       ];
     }
+    // Colaborador
     return [
       { id: "inicio", rotulo: "Meu Desempenho" },
       { id: "rotina", rotulo: "Minha Rotina" },
@@ -1656,70 +1552,92 @@ export default function App() {
     }
   }, [papel, abasVisiveis, aba]);
 
-  // Identifica o colaborador logado (para isolamento de dados no Nível 3)
-  const colaboradorLogadoEfetivoId = useMemo(() => {
-    if (nomeUsuario) {
-      const encontrado = colaboradores.find(
-        (c) => c.nome.toLowerCase() === nomeUsuario.trim().toLowerCase()
-      );
-      if (encontrado) return encontrado.id;
-    }
-    const doSupervisor = colaboradores.find((c) => (c.supervisor || "Jaqueline") === supervisorAtivo);
-    return doSupervisor?.id || colaboradores[0]?.id || "c1";
-  }, [colaboradores, nomeUsuario, supervisorAtivo]);
+  // Une os colaboradores reais cadastrados na coleção /usuarios com eventuais colaboradores adicionados em Meu Time
+  const todosColaboradores = useMemo(() => {
+    const excluidosSet = new Set(idsExcluidos);
+    const mapa = new Map();
 
-  // Isolamento de Segurança por Hierarquia (NUNCA recria colaboradores excluídos!)
+    // 1. Pessoas reais cadastradas no banco com a patente "colaborador"
+    colaboradoresCadastrados.forEach((u) => {
+      if (excluidosSet.has(u.uid)) return;
+      const supObj = supervisoresCadastrados.find((s) => s.uid === u.supervisorUid);
+      mapa.set(u.uid, {
+        id: u.uid,
+        uid: u.uid,
+        nome: u.nome || u.email || "Colaborador",
+        email: u.email || "",
+        cargo: u.cargo || "Colaborador(a)",
+        supervisorUid: u.supervisorUid || "",
+        supervisorNome: supObj?.nome || u.supervisorNome || "",
+        coordenadorUid: u.coordenadorUid || "",
+        coordenadorNome: u.coordenadorNome || "",
+        iniciais: calcularIniciais(u.nome || u.email),
+        pontosFortes: Array.isArray(u.pontosFortes) ? u.pontosFortes : [],
+        focoDesenvolvimento: u.focoIndividual || "",
+        indicadores: u.indicadores || { tmo: 0, fcr: 0, qualidade: 0, retrabalho: 0 },
+        reconhecimentos: 0,
+        emAcompanhamento: Boolean(u.emAcompanhamento),
+        ultimaConversa: u.ultimaConversa || { data: "", resumo: "", proximoPasso: "", prazo: "" },
+      });
+    });
+
+    // 2. Colaboradores adicionados manualmente pelo botão "+ Adicionar colaborador"
+    colaboradoresExtras.forEach((c) => {
+      if (!c || excluidosSet.has(c.id)) return;
+      const supObj = supervisoresCadastrados.find((s) => s.uid === c.supervisorUid);
+      mapa.set(c.id, {
+        ...c,
+        supervisorNome: supObj?.nome || c.supervisorNome || "",
+      });
+    });
+
+    return Array.from(mapa.values());
+  }, [colaboradoresCadastrados, colaboradoresExtras, supervisoresCadastrados, idsExcluidos]);
+
+  // Isolamento por Hierarquia baseado nos vínculos reais do banco
   const colaboradoresVisiveis = useMemo(() => {
-    const normalizados = colaboradores.map((c) => ({
-      ...c,
-      supervisor: c.supervisor || "Jaqueline",
-    }));
     if (papel === "coordenador") {
-      return normalizados;
+      return todosColaboradores;
     }
     if (papel === "gestor") {
-      // Filtra estritamente pela supervisora logada; se apagar todos, permanece vazio sem recriar
-      return normalizados.filter((c) => c.supervisor === supervisorAtivo);
+      // O Supervisor vê os colaboradores vinculados ao seu UID no banco
+      return todosColaboradores.filter((c) => c.supervisorUid === usuario?.uid);
     }
-    return normalizados.filter((c) => c.id === colaboradorLogadoEfetivoId);
-  }, [colaboradores, papel, supervisorAtivo, colaboradorLogadoEfetivoId]);
+    // O Colaborador vê apenas o próprio registro
+    return todosColaboradores.filter((c) => c.uid === usuario?.uid || c.id === usuario?.uid);
+  }, [todosColaboradores, papel, usuario?.uid]);
 
   const idsColaboradoresVisiveis = useMemo(
     () => new Set(colaboradoresVisiveis.map((c) => c.id)),
     [colaboradoresVisiveis]
   );
 
-  const nomesColaboradoresVisiveis = useMemo(
-    () => new Set(colaboradoresVisiveis.map((c) => c.nome)),
-    [colaboradoresVisiveis]
-  );
-
   const feedbacksVisiveis = useMemo(() => {
     if (papel === "coordenador") return feedbacks;
-    return feedbacks.filter((f) => idsColaboradoresVisiveis.has(f.colaboradorId));
-  }, [feedbacks, papel, idsColaboradoresVisiveis]);
+    if (papel === "gestor") {
+      return feedbacks.filter(
+        (f) => f.supervisorUid === usuario?.uid || idsColaboradoresVisiveis.has(f.colaboradorId)
+      );
+    }
+    return feedbacks.filter((f) => f.colaboradorId === usuario?.uid);
+  }, [feedbacks, papel, usuario?.uid, idsColaboradoresVisiveis]);
 
   const checklistsVisiveis = useMemo(() => {
     if (papel === "coordenador") return checklists;
-    return checklists.filter((c) => idsColaboradoresVisiveis.has(c.colaboradorId));
-  }, [checklists, papel, idsColaboradoresVisiveis]);
-
-  const reconhecimentosVisiveis = useMemo(() => {
-    if (papel === "coordenador") return reconhecimentos;
-    return reconhecimentos.filter((r) => idsColaboradoresVisiveis.has(r.colaboradorId));
-  }, [reconhecimentos, papel, idsColaboradoresVisiveis]);
+    return checklists.filter(
+      (c) => c.supervisorUid === usuario?.uid || idsColaboradoresVisiveis.has(c.colaboradorId)
+    );
+  }, [checklists, papel, usuario?.uid, idsColaboradoresVisiveis]);
 
   const melhoriasVisiveis = useMemo(() => {
     if (papel === "coordenador") return melhorias;
-    return melhorias.filter(
-      (m) => m.supervisor === supervisorAtivo || nomesColaboradoresVisiveis.has(m.responsavel)
-    );
-  }, [melhorias, papel, supervisorAtivo, nomesColaboradoresVisiveis]);
+    return melhorias.filter((m) => m.supervisorUid === usuario?.uid || m.criadoPorUid === usuario?.uid);
+  }, [melhorias, papel, usuario?.uid]);
 
-  // Sincronização em tempo real com o Firestore + Proteção por Timestamp (atualizadoEm)
+  // Sincronização em tempo real com o documento /front30/estado_real no Firestore
   useEffect(() => {
     if (!db || !usuario || !usuario.emailVerified) return;
-    const docRef = doc(db, "front30", "estado_time");
+    const docRef = doc(db, "front30", "estado_real");
     const unsubscribe = onSnapshot(
       docRef,
       (snap) => {
@@ -1731,12 +1649,15 @@ export default function App() {
           const dados = snap.data();
           const remotoTs = Number(dados.atualizadoEm || 0);
 
-          // Se o servidor tiver dados mais novos (ou iguais), aplica no estado e salva no cache local
           if (remotoTs >= localTs) {
             const novoCache = {};
-            if (Array.isArray(dados.colaboradores)) {
-              setColaboradores(dados.colaboradores);
-              novoCache.colaboradores = dados.colaboradores;
+            if (Array.isArray(dados.colaboradoresExtras)) {
+              setColaboradoresExtras(dados.colaboradoresExtras);
+              novoCache.colaboradoresExtras = dados.colaboradoresExtras;
+            }
+            if (Array.isArray(dados.idsExcluidos)) {
+              setIdsExcluidos(dados.idsExcluidos);
+              novoCache.idsExcluidos = dados.idsExcluidos;
             }
             if (dados.itensRotina && typeof dados.itensRotina === "object") {
               setItensRotina(dados.itensRotina);
@@ -1766,26 +1687,30 @@ export default function App() {
               setChecklists(dados.checklists);
               novoCache.checklists = dados.checklists;
             }
+            if (dados.dadosCoordenacao && typeof dados.dadosCoordenacao === "object") {
+              setDadosCoordenacao(dados.dadosCoordenacao);
+              novoCache.dadosCoordenacao = dados.dadosCoordenacao;
+            }
             gravarEstadoLocal({ ...novoCache, atualizadoEm: remotoTs || Date.now() });
           } else if (estadoLocal) {
-            // O estado local é mais recente (ex.: usuário apagou item e atualizou a página); envia ao Firestore
             setDoc(docRef, estadoLocal, { merge: true }).catch(() => {});
           }
         } else {
-          // Primeira vez no Firestore: usa o estado local atual se existir, ou os iniciais
-          const semente = estadoLocal || {
-            colaboradores: COLABORADORES_INICIAIS,
-            itensRotina: ITENS_ROTINA_INICIAIS,
-            melhorias: MELHORIAS_INICIAIS,
-            reconhecimentos: RECONHECIMENTOS_INICIAIS,
-            agenda: AGENDA_INICIAL,
-            evolucoes: EVOLUCOES_INICIAIS,
-            feedbacks: FEEDBACKS_INICIAIS,
-            checklists: CHECKLIST_ATRASO_INICIAL,
+          const inicialLimpo = estadoLocal || {
+            colaboradoresExtras: [],
+            idsExcluidos: [],
+            itensRotina: ROTINA_VAZIA,
+            melhorias: [],
+            reconhecimentos: [],
+            agenda: [],
+            evolucoes: [],
+            feedbacks: [],
+            checklists: [],
+            dadosCoordenacao: {},
             atualizadoEm: Date.now(),
           };
-          gravarEstadoLocal(semente);
-          setDoc(docRef, semente, { merge: true }).catch(() => {});
+          gravarEstadoLocal(inicialLimpo);
+          setDoc(docRef, inicialLimpo, { merge: true }).catch(() => {});
         }
       },
       (err) => {
@@ -1796,7 +1721,6 @@ export default function App() {
     return () => unsubscribe();
   }, [usuario]);
 
-  // Salva instantaneamente no localStorage (síncrono, nunca perde ao dar F5) E no Firestore em tempo real
   async function salvarNoFirestore(novosDados) {
     const agora = Date.now();
     const payload = { ...novosDados, atualizadoEm: agora };
@@ -1804,11 +1728,11 @@ export default function App() {
 
     if (!db || !usuario) return;
     try {
-      const docRef = doc(db, "front30", "estado_time");
+      const docRef = doc(db, "front30", "estado_real");
       await setDoc(docRef, payload, { merge: true });
       setFirestoreOnline(true);
     } catch (e) {
-      console.warn("Aviso ao sincronizar com Firestore (salvo localmente com segurança):", e);
+      console.warn("Aviso ao salvar no Firestore (salvo localmente):", e);
     }
   }
 
@@ -1818,40 +1742,74 @@ export default function App() {
   }
 
   function adicionarColaborador(novoColaborador) {
-    setColaboradores((prev) => {
-      const atualizado = [novoColaborador, ...prev];
-      salvarNoFirestore({ colaboradores: atualizado });
+    const comVinculo = {
+      ...novoColaborador,
+      supervisorUid: novoColaborador.supervisorUid || (papel === "gestor" ? usuario?.uid : ""),
+      supervisorNome:
+        novoColaborador.supervisorNome ||
+        (papel === "gestor" ? nomeUsuario || usuario?.email : ""),
+    };
+    setColaboradoresExtras((prev) => {
+      const atualizado = [comVinculo, ...prev];
+      salvarNoFirestore({ colaboradoresExtras: atualizado });
       return atualizado;
     });
-    mostrarToast(`Colaborador ${novoColaborador.nome} adicionado e salvo.`);
+    mostrarToast(`Colaborador ${novoColaborador.nome} salvo no banco.`);
   }
 
-  function atualizarColaborador(id, camposAtualizados) {
-    setColaboradores((prev) => {
-      const atualizado = prev.map((c) => (c.id === id ? { ...c, ...camposAtualizados } : c));
-      salvarNoFirestore({ colaboradores: atualizado });
+  async function removerColaborador(id, nome, uidBanco) {
+    const novosExcluidos = Array.from(new Set([...idsExcluidos, id, uidBanco].filter(Boolean)));
+    setIdsExcluidos(novosExcluidos);
+    setColaboradoresExtras((prev) => {
+      const atualizado = prev.filter((c) => c.id !== id && c.uid !== uidBanco);
+      salvarNoFirestore({ colaboradoresExtras: atualizado, idsExcluidos: novosExcluidos });
       return atualizado;
     });
-  }
-
-  function removerColaborador(id, nome) {
-    setColaboradores((prev) => {
-      const atualizado = prev.filter((c) => c.id !== id);
-      salvarNoFirestore({ colaboradores: atualizado });
-      return atualizado;
-    });
+    if (uidBanco) {
+      await removerUsuarioDoBanco(uidBanco);
+    }
     mostrarToast(`Colaborador ${nome || ""} removido permanentemente.`);
   }
 
-  function alternarStatusItem(bloco, id) {
+  function adicionarItemRotina(bloco, texto) {
+    const novoItem = { id: gerarId("rot"), texto, status: "nao_iniciado" };
     setItensRotina((prev) => {
+      const listaBloco = Array.isArray(prev?.[bloco]) ? prev[bloco] : [];
       const atualizado = {
         ...prev,
-        [bloco]: prev[bloco].map((item) => (item.id === id ? { ...item, status: PROX_STATUS[item.status] } : item)),
+        [bloco]: [...listaBloco, novoItem],
       };
       salvarNoFirestore({ itensRotina: atualizado });
       return atualizado;
     });
+    mostrarToast("Atividade adicionada à rotina.");
+  }
+
+  function alternarStatusItem(bloco, id) {
+    setItensRotina((prev) => {
+      const listaBloco = Array.isArray(prev?.[bloco]) ? prev[bloco] : [];
+      const atualizado = {
+        ...prev,
+        [bloco]: listaBloco.map((item) =>
+          item.id === id ? { ...item, status: PROX_STATUS[item.status] } : item
+        ),
+      };
+      salvarNoFirestore({ itensRotina: atualizado });
+      return atualizado;
+    });
+  }
+
+  function removerItemRotina(bloco, id) {
+    setItensRotina((prev) => {
+      const listaBloco = Array.isArray(prev?.[bloco]) ? prev[bloco] : [];
+      const atualizado = {
+        ...prev,
+        [bloco]: listaBloco.filter((item) => item.id !== id),
+      };
+      salvarNoFirestore({ itensRotina: atualizado });
+      return atualizado;
+    });
+    mostrarToast("Atividade removida da rotina.");
   }
 
   function adicionarMelhoria(form) {
@@ -1861,7 +1819,8 @@ export default function App() {
       causa: form.causa,
       acao: form.acao,
       responsavel: form.responsavel,
-      supervisor: supervisorAtivo,
+      supervisorUid: usuario?.uid || "",
+      criadoPorUid: usuario?.uid || "",
       prazo: form.prazo || obterDataHojeISO(),
       resultado: "",
       aprendizado: "",
@@ -1873,12 +1832,14 @@ export default function App() {
       salvarNoFirestore({ melhorias: atualizado });
       return atualizado;
     });
-    mostrarToast("Registro de melhoria criado e salvo.");
+    mostrarToast("Registro de melhoria salvo.");
   }
 
   function concluirMelhoria(id, resultado, aprendizado) {
     setMelhorias((prev) => {
-      const atualizado = prev.map((m) => (m.id === id ? { ...m, resultado, aprendizado, status: "concluida" } : m));
+      const atualizado = prev.map((m) =>
+        m.id === id ? { ...m, resultado, aprendizado, status: "concluida" } : m
+      );
       salvarNoFirestore({ melhorias: atualizado });
       return atualizado;
     });
@@ -1895,7 +1856,7 @@ export default function App() {
   }
 
   function adicionarCompromisso(dados) {
-    const novo = { id: gerarId("ag"), supervisor: supervisorAtivo, ...dados };
+    const novo = { id: gerarId("ag"), supervisorUid: usuario?.uid || "", ...dados };
     setAgenda((prev) => {
       const atualizado = [...prev, novo];
       salvarNoFirestore({ agenda: atualizado });
@@ -1918,8 +1879,8 @@ export default function App() {
       id: gerarId("ev"),
       periodo,
       texto,
-      supervisor: supervisorAtivo,
-      autor: nomeUsuario || supervisorAtivo,
+      supervisorUid: usuario?.uid || "",
+      autor: nomeUsuario || usuario?.email || "",
       data: obterDataHojeISO(),
       status: "enviado",
     };
@@ -1941,12 +1902,16 @@ export default function App() {
   }
 
   function enviarFeedback(colaboradorId, texto) {
-    const autorLabel = nomeUsuario
-      ? `${nomeUsuario} (${papel === "coordenador" ? "Coordenação" : "Supervisão"})`
-      : papel === "coordenador"
-      ? "Coordenação Geral"
-      : `Supervisão (${supervisorAtivo})`;
-    const novo = { id: gerarId("f"), colaboradorId, autor: autorLabel, texto, data: obterDataHojeISO(), resposta: null };
+    const autorLabel = nomeUsuario || usuario?.email || "Liderança";
+    const novo = {
+      id: gerarId("f"),
+      colaboradorId,
+      supervisorUid: usuario?.uid || "",
+      autor: autorLabel,
+      texto,
+      data: obterDataHojeISO(),
+      resposta: null,
+    };
     setFeedbacks((prev) => {
       const atualizado = [...prev, novo];
       salvarNoFirestore({ feedbacks: atualizado });
@@ -1965,11 +1930,17 @@ export default function App() {
   }
 
   function responderFeedback(feedbackId, texto) {
-    const colab = colaboradores.find((c) => c.id === colaboradorLogadoEfetivoId);
     setFeedbacks((prev) => {
       const atualizado = prev.map((f) =>
         f.id === feedbackId
-          ? { ...f, resposta: { texto, autor: nomeUsuario || colab?.nome || "Colaborador", data: obterDataHojeISO() } }
+          ? {
+              ...f,
+              resposta: {
+                texto,
+                autor: nomeUsuario || usuario?.email || "Colaborador",
+                data: obterDataHojeISO(),
+              },
+            }
           : f
       );
       salvarNoFirestore({ feedbacks: atualizado });
@@ -1979,7 +1950,7 @@ export default function App() {
   }
 
   function registrarAtraso(dados) {
-    const novo = { id: gerarId("ch"), supervisor: supervisorAtivo, ...dados };
+    const novo = { id: gerarId("ch"), supervisorUid: usuario?.uid || "", ...dados };
     setChecklists((prev) => {
       const atualizado = [...prev, novo];
       salvarNoFirestore({ checklists: atualizado });
@@ -1997,20 +1968,11 @@ export default function App() {
     mostrarToast("Registro de atraso removido permanentemente.");
   }
 
-  const prioridadeDia =
-    papel === "coordenador"
-      ? "Acompanhar consolidado das 8 supervisões (Amanda, Camila, Cristiane, Julio, Luciane, Fátima, Jaqueline Rocha Lima e Luciana Faiad Labate)."
-      : papel === "gestor"
-      ? `Foco da Supervisão (${supervisorAtivo}): acompanhar indicadores de qualidade, TMO e feedbacks pendentes exclusivamente da sua equipe.`
-      : "Acompanhar seus indicadores individuais do dia, responder feedbacks e concluir itens da sua rotina.";
-
-  const nomeSupervisorExibicao =
-    LISTA_SUPERVISORES_HIERARQUIA.find((s) => s.id === supervisorAtivo)?.nome || supervisorAtivo;
-
-  const colaboradorDoPerfil = useMemo(
-    () => colaboradores.find((c) => c.id === colaboradorLogadoEfetivoId) || null,
-    [colaboradores, colaboradorLogadoEfetivoId]
-  );
+  function atualizarDadosCoordenacao(novosDadosCoord) {
+    setDadosCoordenacao(novosDadosCoord);
+    salvarNoFirestore({ dadosCoordenacao: novosDadosCoord });
+    mostrarToast("Dados da coordenação atualizados e salvos.");
+  }
 
   return (
     <div className="f30-app">
@@ -2023,10 +1985,10 @@ export default function App() {
           </div>
         </div>
 
-        {/* Cartão de Perfil e Nível Hierárquico (clicável para abrir Meu Perfil) */}
+        {/* Cartão com a Patente real cadastrada no banco de dados */}
         <div
           onClick={() => setAba("perfil")}
-          title="Clique para editar seu perfil em tempo real"
+          title="Clique para abrir Meu Perfil"
           style={{
             margin: "0 4px 12px",
             padding: "8px 10px",
@@ -2060,29 +2022,29 @@ export default function App() {
             }}
           >
             {papel === "coordenador"
-              ? "🔒 NÍVEL 1 · COORDENAÇÃO GERAL"
+              ? "🔒 PATENTE: COORDENADOR(A) GERAL"
               : papel === "gestor"
-              ? "🔒 NÍVEL 2 · SUPERVISÃO"
-              : "🔒 NÍVEL 3 · COLABORADOR(A)"}
+              ? "🔒 PATENTE: GESTOR(A) / SUPERVISOR(A)"
+              : "🔒 PATENTE: COLABORADOR(A)"}
           </div>
           <div style={{ color: "#0F172A", marginTop: 3, fontWeight: 700 }}>
-            {nomeUsuario || dadosPerfil?.nome || usuario?.email?.split("@")[0]}
-          </div>
-          <div style={{ color: "#475569", marginTop: 1, fontWeight: 600 }}>
-            {papel === "coordenador"
-              ? "Acesso Consolidado (8 Equipes)"
-              : `Equipe: ${nomeSupervisorExibicao}`}
+            {nomeUsuario || usuario?.email}
           </div>
         </div>
 
         <nav className="f30-nav">
           {abasVisiveis.map((a) => (
-            <button key={a.id} className={`f30-nav-item ${aba === a.id ? "ativo" : ""}`} onClick={() => setAba(a.id)}>
+            <button
+              key={a.id}
+              className={`f30-nav-item ${aba === a.id ? "ativo" : ""}`}
+              onClick={() => setAba(a.id)}
+            >
               <svg width="18" height="18" viewBox="0 0 24 24">{ICONES_NAV[a.id]}</svg>
               {a.rotulo}
             </button>
           ))}
         </nav>
+
         <div className="f30-conta">
           <span
             className="f30-conta-email"
@@ -2099,13 +2061,13 @@ export default function App() {
       <main className="f30-main">
         <div className="f30-header">
           <div>
-            <h1>{abasVisiveis.find((a) => a.id === aba)?.rotulo || ABAS.find((a) => a.id === aba)?.rotulo}</h1>
+            <h1>{abasVisiveis.find((a) => a.id === aba)?.rotulo}</h1>
             <p>
               {papel === "coordenador"
-                ? "Visão exclusiva da Coordenação Geral — acesso estratégico às 8 supervisões (incluindo Jaqueline Rocha Lima e Luciana Faiad Labate)"
+                ? "Acesso exclusivo da patente Coordenador(a) Geral — dados 100% reais do banco de dados"
                 : papel === "gestor"
-                ? `Visão isolada de Supervisão (${nomeSupervisorExibicao}) — alterações salvas automaticamente em tempo real`
-                : `Visão individual do Colaborador (${nomeUsuario || usuario?.email}) — perfil e dados sincronizados em tempo real`}
+                ? "Acesso da patente Gestor(a) / Supervisor(a) — equipe vinculada no banco de dados"
+                : "Acesso da patente Colaborador(a) — perfil e registros sincronizados em tempo real"}
             </p>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -2121,7 +2083,7 @@ export default function App() {
                 border: "1px solid #bbf7d0",
               }}
             >
-              {firestoreOnline ? "● SALVO EM TEMPO REAL (NUVEM + LOCAL)" : "● SALVO AUTOMATICAMENTE"}
+              {firestoreOnline ? "● BANCO DE DADOS EM TEMPO REAL" : "● SALVO AUTOMATICAMENTE"}
             </span>
             <div className="f30-date-stub">{obterDataCabecalho()}</div>
           </div>
@@ -2131,77 +2093,68 @@ export default function App() {
           <TelaInicio
             colaboradores={colaboradoresVisiveis}
             melhorias={melhoriasVisiveis}
-            evolucoes={evolucoes}
-            reconhecimentos={reconhecimentosVisiveis}
-            prioridadeDia={prioridadeDia}
-            analise={analise}
-            setAnalise={setAnalise}
+            reconhecimentos={reconhecimentos}
           />
         )}
 
-        {aba === "coordenacao" && (
-          papel === "coordenador" ? (
-            <PainelCoordenadora
-              melhorias={melhorias}
-              feedbacks={feedbacks}
-              checklists={checklists}
-              onRemoverMelhoria={removerMelhoria}
-              onRemoverFeedback={removerFeedback}
-              onRemoverAtraso={removerAtraso}
-            />
-          ) : (
-            <div className="f30-vazio">
-              🔒 Acesso Restrito: O Painel Executivo One Page é exclusivo do nível de Coordenação Geral para evitar vazamento de dados entre equipes.
-            </div>
-          )
+        {/* Aba Coordenação: renderiza SOMENTE se o usuário tiver a patente "coordenador" no banco */}
+        {aba === "coordenacao" && papel === "coordenador" && (
+          <PainelCoordenadora
+            supervisoresCadastrados={supervisoresCadastrados}
+            colaboradores={todosColaboradores}
+            melhorias={melhorias}
+            feedbacks={feedbacks}
+            checklists={checklists}
+            dadosCoordenacao={dadosCoordenacao}
+            onAtualizarDadosCoordenacao={atualizarDadosCoordenacao}
+            onRemoverMelhoria={removerMelhoria}
+          />
         )}
 
-        {aba === "time" && (
-          papel === "gestor" || papel === "coordenador" ? (
-            <TelaTime
-              colaboradores={colaboradoresVisiveis}
-              feedbacks={feedbacksVisiveis}
-              checklists={checklistsVisiveis}
-              reconhecimentos={reconhecimentosVisiveis}
-              onAdicionarColaborador={adicionarColaborador}
-              onRemoverColaborador={removerColaborador}
-              papel={papel}
-              supervisorPadrao={supervisorAtivo}
-            />
-          ) : (
-            <div className="f30-vazio">🔒 Acesso Restrito: Esta tela é exclusiva dos níveis de Supervisão e Coordenação.</div>
-          )
+        {aba === "time" && (papel === "gestor" || papel === "coordenador") && (
+          <TelaTime
+            colaboradores={colaboradoresVisiveis}
+            feedbacks={feedbacksVisiveis}
+            checklists={checklistsVisiveis}
+            reconhecimentos={reconhecimentos}
+            onAdicionarColaborador={adicionarColaborador}
+            onRemoverColaborador={removerColaborador}
+            supervisoresCadastrados={
+              papel === "coordenador"
+                ? supervisoresCadastrados
+                : supervisoresCadastrados.filter((s) => s.uid === usuario?.uid)
+            }
+          />
         )}
 
-        {aba === "rotina" && <TelaRotina itens={itensRotina} onAlternarStatus={alternarStatusItem} />}
-
-        {aba === "melhorias" && (
-          papel === "gestor" || papel === "coordenador" ? (
-            <TelaMelhorias
-              melhorias={melhoriasVisiveis}
-              colaboradores={colaboradoresVisiveis}
-              onAdicionar={adicionarMelhoria}
-              onConcluir={concluirMelhoria}
-              onRemover={removerMelhoria}
-            />
-          ) : (
-            <div className="f30-vazio">🔒 Acesso Restrito: O gerenciamento de melhorias é exclusivo da Supervisão e Coordenação.</div>
-          )
+        {aba === "rotina" && (
+          <TelaRotina
+            itens={itensRotina}
+            onAlternarStatus={alternarStatusItem}
+            onAdicionarItemRotina={adicionarItemRotina}
+            onRemoverItemRotina={removerItemRotina}
+          />
         )}
 
-        {aba === "agenda" && (
-          papel === "gestor" || papel === "coordenador" ? (
-            <TelaAgenda
-              agenda={agenda}
-              evolucoes={evolucoes}
-              onEnviarEvolucao={enviarEvolucao}
-              onAdicionarCompromisso={adicionarCompromisso}
-              onRemoverCompromisso={removerCompromisso}
-              onRemoverEvolucao={removerEvolucao}
-            />
-          ) : (
-            <div className="f30-vazio">🔒 Acesso Restrito: A agenda gerencial é exclusiva da Supervisão e Coordenação.</div>
-          )
+        {aba === "melhorias" && (papel === "gestor" || papel === "coordenador") && (
+          <TelaMelhorias
+            melhorias={melhoriasVisiveis}
+            colaboradores={colaboradoresVisiveis}
+            onAdicionar={adicionarMelhoria}
+            onConcluir={concluirMelhoria}
+            onRemover={removerMelhoria}
+          />
+        )}
+
+        {aba === "agenda" && (papel === "gestor" || papel === "coordenador") && (
+          <TelaAgenda
+            agenda={agenda}
+            evolucoes={evolucoes}
+            onEnviarEvolucao={enviarEvolucao}
+            onAdicionarCompromisso={adicionarCompromisso}
+            onRemoverCompromisso={removerCompromisso}
+            onRemoverEvolucao={removerEvolucao}
+          />
         )}
 
         {aba === "feedback" && (
@@ -2212,21 +2165,17 @@ export default function App() {
             onResponder={responderFeedback}
             onRemoverFeedback={removerFeedback}
             papel={papel}
-            colaboradorLogadoId={colaboradorLogadoEfetivoId}
+            colaboradorLogadoId={usuario?.uid}
           />
         )}
 
-        {aba === "checklist" && (
-          papel === "gestor" || papel === "coordenador" ? (
-            <TelaChecklistAtraso
-              colaboradores={colaboradoresVisiveis}
-              checklists={checklistsVisiveis}
-              onRegistrar={registrarAtraso}
-              onRemoverAtraso={removerAtraso}
-            />
-          ) : (
-            <div className="f30-vazio">🔒 Acesso Restrito: O checklist de atraso é exclusivo dos níveis de Supervisão e Coordenação.</div>
-          )
+        {aba === "checklist" && (papel === "gestor" || papel === "coordenador") && (
+          <TelaChecklistAtraso
+            colaboradores={colaboradoresVisiveis}
+            checklists={checklistsVisiveis}
+            onRegistrar={registrarAtraso}
+            onRemoverAtraso={removerAtraso}
+          />
         )}
 
         {aba === "perfil" && (
@@ -2234,13 +2183,12 @@ export default function App() {
             usuario={usuario}
             papel={papel}
             dadosPerfil={dadosPerfil}
-            supervisorAtivo={supervisorAtivo}
-            colaboradorVinculado={papel === "colaborador" ? colaboradorDoPerfil : null}
+            coordenadoresCadastrados={coordenadoresCadastrados}
+            supervisoresCadastrados={supervisoresCadastrados}
             onSalvarPerfil={async (novosCampos) => {
               await atualizarMeuPerfil(novosCampos);
-              mostrarToast("Seu perfil foi atualizado e salvo em tempo real!");
+              mostrarToast("Perfil atualizado e salvo em tempo real no banco!");
             }}
-            onAtualizarColaborador={atualizarColaborador}
           />
         )}
       </main>

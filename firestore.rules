@@ -3,25 +3,23 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Função auxiliar: verifica se o usuário está autenticado
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // Função auxiliar: verifica se o usuário está logado e com o e-mail verificado
     function isVerifiedUser() {
       return isAuthenticated() && request.auth.token.email_verified == true;
     }
 
-    // Coleção de perfil individual em tempo real do usuário (/usuarios/{userId})
+    // Coleção de usuários e patentes (/usuarios/{userId})
+    // Leitura liberada para carregar em tempo real quem possui cada Patente (Coordenador, Gestor, Colaborador) no banco
     match /usuarios/{userId} {
-      // Permite criar e atualizar o próprio perfil se autenticado e for o próprio uid
-      allow create, read, update: if isAuthenticated() && request.auth.uid == userId;
-      allow delete: if isVerifiedUser() && request.auth.uid == userId;
+      allow read: if true;
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated();
     }
 
-    // Coleção de dados em tempo real do Front 30' (/front30/{docId})
-    // Garante sincronização em tempo real sem perda de dados ao atualizar a página
+    // Estado em tempo real do sistema (/front30/{docId})
     match /front30/{docId} {
       allow read, write: if isAuthenticated();
     }

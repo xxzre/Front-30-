@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useAuth, LISTA_SUPERVISORES_HIERARQUIA } from "../context/AuthContext.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 
 const MENSAGENS_ERRO = {
   "auth/invalid-email": "E-mail inválido. Verifique o formato digitado.",
@@ -20,13 +20,26 @@ function traduzirErro(erro) {
 }
 
 export default function Login() {
-  const { entrar, cadastrar, reenviarVerificacao, redefinirSenha, firebaseConfigurado } = useAuth();
+  const {
+    entrar,
+    cadastrar,
+    reenviarVerificacao,
+    redefinirSenha,
+    firebaseConfigurado,
+    coordenadoresCadastrados,
+    supervisoresCadastrados,
+  } = useAuth();
+
   const [modo, setModo] = useState("entrar"); // "entrar" | "cadastrar"
   const [nome, setNome] = useState("");
+  const [cargo, setCargo] = useState("");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
-  const [perfil, setPerfil] = useState("gestor"); // "colaborador" | "gestor" | "coordenador"
-  const [supervisor, setSupervisor] = useState("Jaqueline");
+  // Nenhuma opção pré-selecionada! Tudo começa vazio ("")
+  const [perfil, setPerfil] = useState("");
+  const [coordenadorUid, setCoordenadorUid] = useState("");
+  const [supervisorUid, setSupervisorUid] = useState("");
+
   const [carregando, setCarregando] = useState(false);
   const [reenviando, setReenviando] = useState(false);
   const [erro, setErro] = useState("");
@@ -39,21 +52,20 @@ export default function Login() {
     setAviso("");
     setPrecisaVerificar(false);
 
-    if (!firebaseConfigurado) {
-      setCarregando(true);
-      try {
-        await entrar(email || "gestora@front30.com", senha || "demo123");
-      } catch (err) {
-        setErro(traduzirErro(err));
-      } finally {
-        setCarregando(false);
-      }
-      return;
-    }
-
     if (!email || !senha) {
       setErro("Preencha e-mail e senha.");
       return;
+    }
+
+    if (modo === "cadastrar") {
+      if (!nome.trim()) {
+        setErro("Informe seu nome completo.");
+        return;
+      }
+      if (!perfil) {
+        setErro("Selecione sua patente (Colaborador, Gestor/Supervisor ou Coordenador Geral).");
+        return;
+      }
     }
 
     setCarregando(true);
@@ -61,12 +73,20 @@ export default function Login() {
       if (modo === "entrar") {
         await entrar(email, senha);
       } else {
-        const res = await cadastrar(email, senha, perfil, supervisor, nome.trim());
+        const res = await cadastrar({
+          nome: nome.trim(),
+          cargo: cargo.trim(),
+          email: email.trim(),
+          senha,
+          perfil,
+          coordenadorUid: perfil !== "coordenador" ? coordenadorUid : "",
+          supervisorUid: perfil === "colaborador" ? supervisorUid : "",
+        });
         if (res?.verificacaoEnviada) {
           setModo("entrar");
           setPrecisaVerificar(true);
           setAviso(
-            `Conta criada com sucesso! Enviamos um link de confirmação para ${email}. Verifique sua caixa de entrada e a pasta de Spam antes de fazer login.`
+            `Conta criada com sucesso no banco de dados! Enviamos um link de confirmação para ${email}. Verifique sua caixa de entrada e a pasta de Spam antes de fazer login.`
           );
         }
       }
@@ -133,15 +153,9 @@ export default function Login() {
         <h1 className="f30-login-titulo">{modo === "entrar" ? "Entrar na sua conta" : "Criar sua conta"}</h1>
         <p className="f30-login-sub">
           {modo === "entrar"
-            ? "Use o e-mail e a senha cadastrados para acessar sua rotina."
-            : "Escolha seu nível hierárquico para configurar suas permissões de segurança."}
+            ? "Use o e-mail e a senha cadastrados no banco de dados para acessar."
+            : "Cadastre seus dados reais e selecione sua patente no sistema."}
         </p>
-
-        {!firebaseConfigurado && (
-          <div style={{ background: "#fff7ed", border: "1px solid #ffedd5", color: "#c2410c", padding: "10px 12px", borderRadius: 8, fontSize: 13, marginBottom: 14, lineHeight: 1.4 }}>
-            💡 <b>Modo Demonstração:</b> Firebase não configurado no .env. Clique em <b>Entrar</b> para visualizar o protótipo.
-          </div>
-        )}
 
         <form className="f30-form" onSubmit={enviar}>
           {modo === "cadastrar" && (
@@ -151,8 +165,16 @@ export default function Login() {
                 type="text"
                 value={nome}
                 onChange={(e) => setNome(e.target.value)}
-                placeholder="Seu nome completo"
+                placeholder="Digite seu nome completo"
                 required
+              />
+
+              <label>Cargo / Função (opcional)</label>
+              <input
+                type="text"
+                value={cargo}
+                onChange={(e) => setCargo(e.target.value)}
+                placeholder="Digite seu cargo"
               />
             </>
           )}
@@ -176,24 +198,50 @@ export default function Login() {
 
           {modo === "cadastrar" && (
             <>
-              <label>Nível de acesso (Hierarquia)</label>
-              <select value={perfil} onChange={(e) => setPerfil(e.target.value)}>
-                <option value="colaborador">Colaborador (acesso restrito aos próprios dados)</option>
-                <option value="gestor">Supervisor(a) / Gestor(a) (acesso à sua equipe)</option>
-                <option value="coordenador">Coordenador(a) Geral (visão executiva total)</option>
+              <label>Patente / Nível Hierárquico</label>
+              <select
+                value={perfil}
+                onChange={(e) => {
+                  setPerfil(e.target.value);
+                  setCoordenadorUid("");
+                  setSupervisorUid("");
+                }}
+                required
+              >
+                <option value="">-- Selecione sua patente --</option>
+                <option value="colaborador">Colaborador(a)</option>
+                <option value="gestor">Gestor(a) / Supervisor(a)</option>
+                <option value="coordenador">Coordenador(a) Geral</option>
               </select>
 
-              {(perfil === "gestor" || perfil === "colaborador") && (
+              {/* Se for Colaborador, escolhe apenas entre os Supervisores/Gestores reais cadastrados no banco */}
+              {perfil === "colaborador" && (
                 <>
-                  <label>
-                    {perfil === "gestor"
-                      ? "Selecione sua identificação de Supervisor(a)"
-                      : "Qual é o seu Supervisor(a) direto?"}
-                  </label>
-                  <select value={supervisor} onChange={(e) => setSupervisor(e.target.value)}>
-                    {LISTA_SUPERVISORES_HIERARQUIA.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.nome}
+                  <label>Quem é seu(sua) Gestor(a) / Supervisor(a)? (cadastrado no banco)</label>
+                  <select value={supervisorUid} onChange={(e) => setSupervisorUid(e.target.value)}>
+                    <option value="">
+                      {supervisoresCadastrados.length > 0
+                        ? "-- Selecione o(a) Supervisor(a) cadastrado(a) --"
+                        : "-- Nenhum(a) Supervisor(a) cadastrado(a) no banco ainda --"}
+                    </option>
+                    {supervisoresCadastrados.map((sup) => (
+                      <option key={sup.uid} value={sup.uid}>
+                        {sup.nome || sup.email}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+
+              {/* Se for Gestor/Supervisor ou Colaborador, só mostra Coordenador Geral se houver algum cadastrado com essa patente no banco */}
+              {(perfil === "gestor" || perfil === "colaborador") && coordenadoresCadastrados.length > 0 && (
+                <>
+                  <label>Quem é seu(sua) Coordenador(a) Geral? (cadastrado no banco)</label>
+                  <select value={coordenadorUid} onChange={(e) => setCoordenadorUid(e.target.value)}>
+                    <option value="">-- Selecione o(a) Coordenador(a) Geral cadastrado(a) --</option>
+                    {coordenadoresCadastrados.map((coord) => (
+                      <option key={coord.uid} value={coord.uid}>
+                        {coord.nome || coord.email}
                       </option>
                     ))}
                   </select>

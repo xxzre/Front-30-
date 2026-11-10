@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, useMemo } from "react";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -7,26 +7,55 @@ import {
   sendPasswordResetEmail,
   signOut,
 } from "firebase/auth";
-import { doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
+import { collection, doc, getDoc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
 import { auth, db, firebaseConfigurado } from "../firebase.js";
 
 const AuthContext = createContext(null);
 
-export const LISTA_SUPERVISORES_HIERARQUIA = [
-  { id: "Amanda", nome: "Amanda Lira" },
-  { id: "Camila", nome: "Camila dos Reis" },
-  { id: "Cristiane", nome: "Cristiane de Souza" },
-  { id: "Julio", nome: "Julio Ortunes" },
-  { id: "Luciane", nome: "Luciane Oliveira" },
-  { id: "Fátima", nome: "Maria de Fátima" },
-  { id: "Jaqueline", nome: "Jaqueline Rocha Lima" },
-  { id: "Luciana Faiad", nome: "Luciana Faiad Labate" },
-];
+const CHAVE_USUARIOS_BANCO = "f30_usuarios_banco_v4";
+
+function lerUsuariosCache() {
+  try {
+    const raw = localStorage.getItem(CHAVE_USUARIOS_BANCO);
+    if (raw) {
+      const lista = JSON.parse(raw);
+      if (Array.isArray(lista)) return lista;
+    }
+  } catch (e) {
+    console.warn("Aviso ao ler cache de usuários:", e);
+  }
+  return [];
+}
+
+function gravarUsuariosCache(lista) {
+  try {
+    localStorage.setItem(CHAVE_USUARIOS_BANCO, JSON.stringify(lista));
+  } catch (e) {
+    console.warn("Aviso ao gravar cache de usuários:", e);
+  }
+}
+
+function atualizarUsuarioNoCache(docUsuario) {
+  if (!docUsuario || !docUsuario.uid) return lerUsuariosCache();
+  const atual = lerUsuariosCache();
+  const existe = atual.some((u) => u.uid === docUsuario.uid);
+  const novaLista = existe
+    ? atual.map((u) => (u.uid === docUsuario.uid ? { ...u, ...docUsuario } : u))
+    : [...atual, docUsuario];
+  gravarUsuariosCache(novaLista);
+  return novaLista;
+}
+
+function removerUsuarioDoCache(uid) {
+  const atual = lerUsuariosCache().filter((u) => u.uid !== uid);
+  gravarUsuariosCache(atual);
+  return atual;
+}
 
 function lerPerfilLocal(uid) {
   if (!uid) return null;
   try {
-    const raw = localStorage.getItem(`f30_perfil_completo_${uid}`);
+    const raw = localStorage.getItem(`f30_perfil_real_${uid}`);
     if (raw) return JSON.parse(raw);
   } catch (e) {
     console.warn("Erro ao ler perfil local:", e);
@@ -35,12 +64,10 @@ function lerPerfilLocal(uid) {
 }
 
 function salvarPerfilLocal(uid, dados) {
-  if (!uid) return;
+  if (!uid || !dados) return;
   try {
-    localStorage.setItem(`f30_perfil_completo_${uid}`, JSON.stringify(dados));
-    if (dados.perfil) localStorage.setItem(`f30_perfil_${uid}`, dados.perfil);
-    if (dados.supervisorVinculado) localStorage.setItem(`f30_sup_${uid}`, dados.supervisorVinculado);
-    if (dados.nome) localStorage.setItem(`f30_nome_${uid}`, dados.nome);
+    localStorage.setItem(`f30_perfil_real_${uid}`, JSON.stringify(dados));
+    atualizarUsuarioNoCache(dados);
   } catch (e) {
     console.warn("Erro ao salvar perfil local:", e);
   }
@@ -48,110 +75,138 @@ function salvarPerfilLocal(uid, dados) {
 
 export function AuthProvider({ children }) {
   const [usuario, setUsuario] = useState(null);
-  const [perfilUsuario, setPerfilUsuario] = useState("gestor"); // "colaborador" | "gestor" | "coordenador"
-  const [supervisorVinculado, setSupervisorVinculado] = useState("Jaqueline");
-  const [nomeUsuario, setNomeUsuario] = useState("");
-  const [dadosPerfil, setDadosPerfil] = useState({
-    nome: "",
-    email: "",
-    cargo: "",
-    perfil: "gestor",
-    supervisorVinculado: "Jaqueline",
-    matricula: "",
-    turno: "08:00 às 17:00",
-    telefone: "",
-    focoIndividual: "Manter excelência em qualidade e cumprimento de metas.",
-    atualizadoEm: 0,
-  });
+  const [dadosPerfil, setDadosPerfil] = useState(null);
+  const [usuariosBanco, setUsuariosBanco] = useState(() => lerUsuariosCache());
   const [carregando, setCarregando] = useState(true);
   const [modoDemo, setModoDemo] = useState(!firebaseConfigurado);
 
-  function aplicarDadosPerfilNoEstado(uid, d) {
-    if (!d) return;
-    const p = d.perfil || localStorage.getItem(`f30_perfil_${uid}`) || "gestor";
-    const s = d.supervisorVinculado || localStorage.getItem(`f30_sup_${uid}`) || "Jaqueline";
-    const n = d.nome ?? localStorage.getItem(`f30_nome_${uid}`) ?? "";
+  // Escuta em TEMPO REAL toda a coleção /usuarios do banco de dados (Firestore)
+  useEffect(() => {
+    if (!db) return;
+    const colRef = collection(db, "usuarios");
+    const unsub = onSnapshot(
+      colRef,
+      (snap) => {
+        const doServidor = [];
+        snap.forEach((docSnap) => {
+          const d = docSnap.data();
+          if (d && !d.excluido) {
+            doServidor.push({ ...d, uid: d.uid || docSnap.id });
+          }
+        });
+        // Mescla com eventuais registros locais mais recentes (caso offline/pendente)
+        const locais = lerUsuariosCache();
+        const mapa = new Map();
+        locais.forEach((u) => {
+          if (u && u.uid && !u.excluido) mapa.set(u.uid, u);
+        });
+        doServidor.forEach((remoto) => {
+          const loc = mapa.get(remoto.uid);
+          if (!loc || Number(remoto.atualizadoEm || 0) >= Number(loc.atualizadoEm || 0)) {
+            mapa.set(remoto.uid, remoto);
+          }
+        });
+        const consolidada = Array.from(mapa.values());
+        setUsuariosBanco(consolidada);
+        gravarUsuariosCache(consolidada);
+      },
+      (err) => {
+        console.warn("Aviso ao escutar diretório de patentes (/usuarios):", err.message);
+      }
+    );
+    return () => unsub();
+  }, []);
 
+  // Listas em tempo real filtradas estritamente pela "Patente" (perfil) cadastrada no banco de dados
+  const coordenadoresCadastrados = useMemo(
+    () => usuariosBanco.filter((u) => u.perfil === "coordenador" && !u.excluido),
+    [usuariosBanco]
+  );
+
+  const supervisoresCadastrados = useMemo(
+    () => usuariosBanco.filter((u) => u.perfil === "gestor" && !u.excluido),
+    [usuariosBanco]
+  );
+
+  const colaboradoresCadastrados = useMemo(
+    () => usuariosBanco.filter((u) => u.perfil === "colaborador" && !u.excluido),
+    [usuariosBanco]
+  );
+
+  function aplicarDadosPerfilNoEstado(uid, d) {
+    if (!d) return null;
     const consolidado = {
       uid,
       email: d.email || "",
-      nome: n,
-      cargo:
-        d.cargo ||
-        (p === "coordenador"
-          ? "Coordenador(a) Geral"
-          : p === "gestor"
-          ? "Supervisor(a) de Operações"
-          : "Atendente de Relacionamento"),
-      perfil: p,
-      supervisorVinculado: s,
+      nome: d.nome || "",
+      cargo: d.cargo || "",
+      perfil: d.perfil || "", // "coordenador" | "gestor" | "colaborador"
+      coordenadorUid: d.coordenadorUid || "",
+      coordenadorNome: d.coordenadorNome || "",
+      supervisorUid: d.supervisorUid || "",
+      supervisorNome: d.supervisorNome || "",
       matricula: d.matricula || "",
-      turno: d.turno || "08:00 às 17:00",
+      turno: d.turno || "",
       telefone: d.telefone || "",
-      focoIndividual: d.focoIndividual || "Manter excelência em qualidade e cumprimento de metas.",
+      focoIndividual: d.focoIndividual || "",
+      pontosFortes: Array.isArray(d.pontosFortes) ? d.pontosFortes : [],
+      indicadores: d.indicadores || { tmo: 0, fcr: 0, qualidade: 0, retrabalho: 0 },
       atualizadoEm: Number(d.atualizadoEm || Date.now()),
     };
 
-    setPerfilUsuario(consolidado.perfil);
-    setSupervisorVinculado(consolidado.supervisorVinculado);
-    setNomeUsuario(consolidado.nome);
     setDadosPerfil(consolidado);
     salvarPerfilLocal(uid, consolidado);
+    setUsuariosBanco(lerUsuariosCache());
     return consolidado;
   }
 
-  async function carregarPerfilFirestore(uid, emailFallback = "", dadosFallback = {}) {
+  async function carregarPerfilFirestore(uid, emailFallback = "") {
     const local = lerPerfilLocal(uid);
-    const base = {
-      uid,
-      email: emailFallback || local?.email || "",
-      nome: dadosFallback.nome ?? local?.nome ?? localStorage.getItem(`f30_nome_${uid}`) ?? "",
-      cargo: dadosFallback.cargo ?? local?.cargo ?? "",
-      perfil: dadosFallback.perfil || local?.perfil || localStorage.getItem(`f30_perfil_${uid}`) || "gestor",
-      supervisorVinculado:
-        dadosFallback.supervisor ||
-        local?.supervisorVinculado ||
-        localStorage.getItem(`f30_sup_${uid}`) ||
-        "Jaqueline",
-      matricula: local?.matricula || "",
-      turno: local?.turno || "08:00 às 17:00",
-      telefone: local?.telefone || "",
-      focoIndividual: local?.focoIndividual || "Manter excelência em qualidade e cumprimento de metas.",
-      atualizadoEm: Number(local?.atualizadoEm || 0),
-    };
+    if (local) {
+      aplicarDadosPerfilNoEstado(uid, local);
+    }
 
-    aplicarDadosPerfilNoEstado(uid, base);
-
-    if (!db) return base.perfil;
+    if (!db) return local?.perfil || "";
     try {
       const ref = doc(db, "usuarios", uid);
       const snap = await getDoc(ref);
       if (snap.exists()) {
         const remoto = snap.data();
         const remotoTs = Number(remoto.atualizadoEm || 0);
-        const localTs = Number(base.atualizadoEm || 0);
-        if (remotoTs >= localTs) {
-          const atualizado = aplicarDadosPerfilNoEstado(uid, { ...base, ...remoto });
-          return atualizado.perfil;
+        const localTs = Number(local?.atualizadoEm || 0);
+        if (!local || remotoTs >= localTs) {
+          const atualizado = aplicarDadosPerfilNoEstado(uid, { ...local, ...remoto, uid });
+          return atualizado?.perfil || "";
         } else {
-          // Local é mais recente (ex.: editado antes do F5), sincroniza para o Firestore
-          await setDoc(ref, base, { merge: true });
-          return base.perfil;
+          await setDoc(ref, local, { merge: true });
+          return local.perfil || "";
         }
+      } else if (local) {
+        await setDoc(ref, local, { merge: true });
+        return local.perfil || "";
       } else {
-        // Cria o documento no Firestore se ainda não existir
-        const inicial = { ...base, atualizadoEm: Date.now() };
-        aplicarDadosPerfilNoEstado(uid, inicial);
-        await setDoc(ref, inicial, { merge: true });
-        return inicial.perfil;
+        const minimo = {
+          uid,
+          email: emailFallback || "",
+          nome: "",
+          cargo: "",
+          perfil: "",
+          coordenadorUid: "",
+          coordenadorNome: "",
+          supervisorUid: "",
+          supervisorNome: "",
+          atualizadoEm: Date.now(),
+        };
+        aplicarDadosPerfilNoEstado(uid, minimo);
+        return "";
       }
     } catch (e) {
-      console.warn("Aviso ao sincronizar perfil do usuário:", e);
+      console.warn("Aviso ao carregar perfil do Firestore:", e);
     }
-    return base.perfil;
+    return local?.perfil || "";
   }
 
-  // Assinatura em tempo real (onSnapshot) do perfil do usuário logado
+  // Listener em tempo real do documento individual do usuário logado (/usuarios/{uid})
   useEffect(() => {
     if (!db || !usuario?.uid || !usuario?.emailVerified) return;
     const ref = doc(db, "usuarios", usuario.uid);
@@ -163,43 +218,74 @@ export function AuthProvider({ children }) {
           const local = lerPerfilLocal(usuario.uid);
           const remotoTs = Number(remoto.atualizadoEm || 0);
           const localTs = Number(local?.atualizadoEm || 0);
-          if (remotoTs >= localTs) {
-            aplicarDadosPerfilNoEstado(usuario.uid, { ...local, ...remoto });
+          if (!local || remotoTs >= localTs) {
+            aplicarDadosPerfilNoEstado(usuario.uid, { ...local, ...remoto, uid: usuario.uid });
           }
         }
       },
       (err) => {
-        console.warn("Aviso listener perfil em tempo real:", err.message);
+        console.warn("Aviso listener perfil individual:", err.message);
       }
     );
     return () => unsub();
   }, [usuario?.uid, usuario?.emailVerified]);
 
-  // Atualização em tempo real do próprio perfil (salva instantaneamente no localStorage + Firestore)
   async function atualizarMeuPerfil(novosCampos) {
-    const uid = usuario?.uid || "demo-user";
+    const uid = usuario?.uid;
+    if (!uid) return null;
     const agora = Date.now();
-    const atual = lerPerfilLocal(uid) || dadosPerfil;
+    const atual = lerPerfilLocal(uid) || dadosPerfil || { uid, email: usuario?.email || "" };
+
+    // Resolve nomes de coordenador e supervisor a partir dos UIDs selecionados no banco
+    let coordNome = novosCampos.coordenadorNome ?? atual.coordenadorNome ?? "";
+    if (novosCampos.coordenadorUid !== undefined) {
+      const cEnc = usuariosBanco.find((u) => u.uid === novosCampos.coordenadorUid);
+      coordNome = cEnc ? cEnc.nome || cEnc.email : "";
+    }
+
+    let supNome = novosCampos.supervisorNome ?? atual.supervisorNome ?? "";
+    if (novosCampos.supervisorUid !== undefined) {
+      const sEnc = usuariosBanco.find((u) => u.uid === novosCampos.supervisorUid);
+      supNome = sEnc ? sEnc.nome || sEnc.email : "";
+    }
+
     const novoPerfil = {
       ...atual,
       ...novosCampos,
-      // Mantém o nível hierárquico original por segurança
-      perfil: atual.perfil || perfilUsuario,
+      coordenadorNome: coordNome,
+      supervisorNome: supNome,
       uid,
       email: usuario?.email || atual.email || "",
       atualizadoEm: agora,
     };
 
-    aplicarDadosPerfilNoEstado(uid, novoPerfil);
+    const consolidado = aplicarDadosPerfilNoEstado(uid, novoPerfil);
 
-    if (db && usuario?.uid) {
+    if (db) {
       try {
-        await setDoc(doc(db, "usuarios", usuario.uid), novoPerfil, { merge: true });
+        await setDoc(doc(db, "usuarios", uid), consolidado, { merge: true });
       } catch (e) {
-        console.warn("Aviso ao salvar perfil no Firestore (salvo localmente com sucesso):", e);
+        console.warn("Aviso ao gravar perfil no Firestore (salvo localmente):", e);
       }
     }
-    return novoPerfil;
+    return consolidado;
+  }
+
+  async function removerUsuarioDoBanco(uidAlvo) {
+    if (!uidAlvo) return;
+    removerUsuarioDoCache(uidAlvo);
+    setUsuariosBanco(lerUsuariosCache());
+    if (db) {
+      try {
+        await deleteDoc(doc(db, "usuarios", uidAlvo));
+      } catch (e) {
+        try {
+          await setDoc(doc(db, "usuarios", uidAlvo), { excluido: true, atualizadoEm: Date.now() }, { merge: true });
+        } catch (err) {
+          console.warn("Aviso ao remover usuário do Firestore:", err);
+        }
+      }
+    }
   }
 
   useEffect(() => {
@@ -227,6 +313,7 @@ export function AuthProvider({ children }) {
             }
           } else {
             setUsuario(null);
+            setDadosPerfil(null);
           }
           setCarregando(false);
         },
@@ -242,27 +329,38 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  async function cadastrar(email, senha, perfilEscolhido = "gestor", supervisorEscolhido = "Jaqueline", nomeCompleto = "") {
+  /**
+   * Cadastro sem dados pré-definidos:
+   * - Salva estritamente a Patente (perfil) escolhida e os vínculos reais (coordenadorUid, supervisorUid) do banco
+   */
+  async function cadastrar({
+    nome,
+    email,
+    senha,
+    perfil,
+    coordenadorUid = "",
+    supervisorUid = "",
+    cargo = "",
+  }) {
     const agora = Date.now();
-    const cargoPadrao =
-      perfilEscolhido === "coordenador"
-        ? "Coordenador(a) Geral"
-        : perfilEscolhido === "gestor"
-        ? "Supervisor(a) de Operações"
-        : "Atendente de Relacionamento";
+    const coordEncontrado = usuariosBanco.find((u) => u.uid === coordenadorUid);
+    const supEncontrado = usuariosBanco.find((u) => u.uid === supervisorUid);
 
     if (!auth || !firebaseConfigurado) {
-      const demoUid = "demo-user";
+      const demoUid = `user_${agora}`;
       aplicarDadosPerfilNoEstado(demoUid, {
         uid: demoUid,
-        email: email || "gestora@front30.com",
-        nome: nomeCompleto,
-        cargo: cargoPadrao,
-        perfil: perfilEscolhido,
-        supervisorVinculado: supervisorEscolhido,
+        email,
+        nome,
+        cargo,
+        perfil,
+        coordenadorUid,
+        coordenadorNome: coordEncontrado?.nome || "",
+        supervisorUid,
+        supervisorNome: supEncontrado?.nome || "",
         atualizadoEm: agora,
       });
-      setUsuario({ email: email || "gestora@front30.com", uid: demoUid, emailVerified: true });
+      setUsuario({ email, uid: demoUid, emailVerified: true });
       setModoDemo(true);
       return { verificacaoEnviada: false };
     }
@@ -273,19 +371,25 @@ export function AuthProvider({ children }) {
     const docPerfilInicial = {
       uid: user.uid,
       email: user.email,
-      nome: nomeCompleto,
-      cargo: cargoPadrao,
-      perfil: perfilEscolhido,
-      supervisorVinculado: supervisorEscolhido,
+      nome: nome.trim(),
+      cargo: cargo.trim(),
+      perfil, // "coordenador" | "gestor" | "colaborador"
+      coordenadorUid: coordenadorUid || "",
+      coordenadorNome: coordEncontrado?.nome || "",
+      supervisorUid: supervisorUid || "",
+      supervisorNome: supEncontrado?.nome || "",
       matricula: "",
-      turno: "08:00 às 17:00",
+      turno: "",
       telefone: "",
-      focoIndividual: "Manter excelência em qualidade e cumprimento de metas.",
+      focoIndividual: "",
+      pontosFortes: [],
+      indicadores: { tmo: 0, fcr: 0, qualidade: 0, retrabalho: 0 },
       emailVerificado: false,
       atualizadoEm: agora,
     };
 
     salvarPerfilLocal(user.uid, docPerfilInicial);
+    setUsuariosBanco(lerUsuariosCache());
 
     if (db) {
       try {
@@ -304,7 +408,7 @@ export function AuthProvider({ children }) {
 
   async function entrar(email, senha) {
     if (!auth || !firebaseConfigurado) {
-      setUsuario({ email: email || "gestora@front30.com", uid: "demo-user", emailVerified: true });
+      setUsuario({ email, uid: "demo-user", emailVerified: true });
       setModoDemo(true);
       return { emailVerified: true };
     }
@@ -348,27 +452,31 @@ export function AuthProvider({ children }) {
   }
 
   async function redefinirSenha(email) {
-    if (!auth || !firebaseConfigurado) {
-      return;
-    }
+    if (!auth || !firebaseConfigurado) return;
     return sendPasswordResetEmail(auth, email);
   }
 
   async function sair() {
     if (!auth || !firebaseConfigurado) {
       setUsuario(null);
+      setDadosPerfil(null);
       return;
     }
+    setDadosPerfil(null);
     return signOut(auth);
   }
 
   const valor = {
     usuario,
-    perfilUsuario,
-    supervisorVinculado,
-    nomeUsuario,
+    perfilUsuario: dadosPerfil?.perfil || "",
+    nomeUsuario: dadosPerfil?.nome || "",
     dadosPerfil,
+    usuariosBanco,
+    coordenadoresCadastrados,
+    supervisoresCadastrados,
+    colaboradoresCadastrados,
     atualizarMeuPerfil,
+    removerUsuarioDoBanco,
     carregando,
     modoDemo,
     firebaseConfigurado,
