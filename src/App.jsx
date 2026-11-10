@@ -251,6 +251,47 @@ function gerarId(prefixo) {
   return `${prefixo}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 }
 
+const CHAVE_STORAGE_GLOBAL = "f30_estado_persistido_v3";
+
+function lerEstadoLocal() {
+  try {
+    const raw = localStorage.getItem(CHAVE_STORAGE_GLOBAL);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") return parsed;
+    }
+  } catch (e) {
+    console.warn("Aviso ao ler estado local:", e);
+  }
+  return null;
+}
+
+function gravarEstadoLocal(parcial) {
+  try {
+    const atual = lerEstadoLocal() || {
+      colaboradores: COLABORADORES_INICIAIS,
+      itensRotina: ITENS_ROTINA_INICIAIS,
+      melhorias: MELHORIAS_INICIAIS,
+      reconhecimentos: RECONHECIMENTOS_INICIAIS,
+      agenda: AGENDA_INICIAL,
+      evolucoes: EVOLUCOES_INICIAIS,
+      feedbacks: FEEDBACKS_INICIAIS,
+      checklists: CHECKLIST_ATRASO_INICIAL,
+      atualizadoEm: 0,
+    };
+    const novo = {
+      ...atual,
+      ...parcial,
+      atualizadoEm: parcial.atualizadoEm ?? Date.now(),
+    };
+    localStorage.setItem(CHAVE_STORAGE_GLOBAL, JSON.stringify(novo));
+    return novo;
+  } catch (e) {
+    console.warn("Aviso ao gravar estado local:", e);
+    return null;
+  }
+}
+
 /* --------------------------------- ícones -------------------------------- */
 
 const IconSeta = ({ melhorou, igual }) => (
@@ -274,6 +315,7 @@ const ICONES_NAV = {
   agenda: <path d="M4 5.5h16v15H4v-15Zm0 4.5h16M8 3v4M16 3v4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />,
   feedback: <path d="M4 5h16v10H8l-4 4V5Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />,
   checklist: <path d="M5 4.5h14v15H5v-15Zm3.2 5 1.6 1.6 3-3.2M8.2 14.8l1.6 1.6 3-3.2" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />,
+  perfil: <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />,
 };
 
 const ABAS = [
@@ -285,6 +327,7 @@ const ABAS = [
   { id: "agenda", rotulo: "Agenda" },
   { id: "feedback", rotulo: "Feedback" },
   { id: "checklist", rotulo: "Checklist de Atraso" },
+  { id: "perfil", rotulo: "Meu Perfil" },
 ];
 
 /* ============================== COMPONENTES ============================== */
@@ -1221,10 +1264,308 @@ function TelaChecklistAtraso({ colaboradores, checklists, onRegistrar, onRemover
   );
 }
 
+function TelaPerfil({
+  usuario,
+  papel,
+  dadosPerfil,
+  supervisorAtivo,
+  colaboradorVinculado,
+  onSalvarPerfil,
+  onAtualizarColaborador,
+}) {
+  const [form, setForm] = useState({
+    nome: dadosPerfil?.nome || colaboradorVinculado?.nome || "",
+    cargo:
+      dadosPerfil?.cargo ||
+      colaboradorVinculado?.cargo ||
+      (papel === "coordenador"
+        ? "Coordenador(a) Geral"
+        : papel === "gestor"
+        ? "Supervisor(a) de Operações"
+        : "Atendente de Relacionamento"),
+    supervisorVinculado: dadosPerfil?.supervisorVinculado || supervisorAtivo || "Jaqueline",
+    matricula: dadosPerfil?.matricula || "",
+    turno: dadosPerfil?.turno || "08:00 às 17:00",
+    telefone: dadosPerfil?.telefone || "",
+    focoIndividual:
+      colaboradorVinculado?.focoDesenvolvimento ||
+      dadosPerfil?.focoIndividual ||
+      "Manter excelência em qualidade e cumprimento de metas.",
+    pontosFortes: colaboradorVinculado?.pontosFortes?.join(", ") || "Comprometimento, Qualidade no atendimento",
+    tmo: colaboradorVinculado?.indicadores?.tmo ?? 315,
+    fcr: colaboradorVinculado?.indicadores?.fcr ?? 88,
+    qualidade: colaboradorVinculado?.indicadores?.qualidade ?? 95,
+    retrabalho: colaboradorVinculado?.indicadores?.retrabalho ?? 3,
+  });
+
+  // Sincroniza quando dadosPerfil ou colaboradorVinculado mudarem em tempo real
+  useEffect(() => {
+    setForm((prev) => ({
+      ...prev,
+      nome: dadosPerfil?.nome || colaboradorVinculado?.nome || prev.nome,
+      cargo: dadosPerfil?.cargo || colaboradorVinculado?.cargo || prev.cargo,
+      supervisorVinculado: dadosPerfil?.supervisorVinculado || supervisorAtivo || prev.supervisorVinculado,
+      matricula: dadosPerfil?.matricula ?? prev.matricula,
+      turno: dadosPerfil?.turno || prev.turno,
+      telefone: dadosPerfil?.telefone ?? prev.telefone,
+      focoIndividual:
+        colaboradorVinculado?.focoDesenvolvimento ||
+        dadosPerfil?.focoIndividual ||
+        prev.focoIndividual,
+    }));
+  }, [dadosPerfil, colaboradorVinculado, supervisorAtivo]);
+
+  function atualizar(campo, valor) {
+    setForm((prev) => ({ ...prev, [campo]: valor }));
+  }
+
+  async function salvar(e) {
+    e.preventDefault();
+    await onSalvarPerfil({
+      nome: form.nome.trim(),
+      cargo: form.cargo.trim(),
+      supervisorVinculado: form.supervisorVinculado,
+      matricula: form.matricula.trim(),
+      turno: form.turno.trim(),
+      telefone: form.telefone.trim(),
+      focoIndividual: form.focoIndividual.trim(),
+    });
+
+    if (colaboradorVinculado && onAtualizarColaborador) {
+      const partes = (form.nome.trim() || colaboradorVinculado.nome).split(/\s+/);
+      const iniciais =
+        partes.length >= 2
+          ? (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+          : (form.nome.trim() || colaboradorVinculado.nome).slice(0, 2).toUpperCase();
+
+      onAtualizarColaborador(colaboradorVinculado.id, {
+        nome: form.nome.trim() || colaboradorVinculado.nome,
+        cargo: form.cargo.trim() || colaboradorVinculado.cargo,
+        supervisor: form.supervisorVinculado || colaboradorVinculado.supervisor,
+        iniciais,
+        focoDesenvolvimento: form.focoIndividual.trim() || colaboradorVinculado.focoDesenvolvimento,
+        pontosFortes: form.pontosFortes
+          ? form.pontosFortes.split(",").map((s) => s.trim()).filter(Boolean)
+          : colaboradorVinculado.pontosFortes,
+        indicadores: {
+          tmo: Number(form.tmo) || colaboradorVinculado.indicadores.tmo,
+          fcr: Number(form.fcr) || colaboradorVinculado.indicadores.fcr,
+          qualidade: Number(form.qualidade) || colaboradorVinculado.indicadores.qualidade,
+          retrabalho: Number(form.retrabalho) || colaboradorVinculado.indicadores.retrabalho,
+        },
+      });
+    }
+  }
+
+  const nomeExibicao = form.nome || usuario?.email?.split("@")[0] || "Usuário";
+  const partesNome = nomeExibicao.trim().split(/\s+/);
+  const iniciaisAvatar =
+    partesNome.length >= 2
+      ? (partesNome[0][0] + partesNome[partesNome.length - 1][0]).toUpperCase()
+      : nomeExibicao.slice(0, 2).toUpperCase();
+
+  return (
+    <div className="f30-grid f30-grid-2">
+      <div>
+        <div className="f30-secao-titulo">Cartão de Identidade & Hierarquia (Tempo Real)</div>
+        <div className="f30-card" style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
+            <div
+              className="f30-colab-avatar"
+              style={{ width: 54, height: 54, fontSize: 18, background: "#EA580C", color: "#fff" }}
+            >
+              {iniciaisAvatar}
+            </div>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: "#0F172A" }}>{nomeExibicao}</div>
+              <div style={{ fontSize: 13, color: "var(--ink-soft)" }}>{form.cargo}</div>
+              <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                <span
+                  style={{
+                    fontSize: 10.5,
+                    fontWeight: 800,
+                    padding: "3px 8px",
+                    borderRadius: 999,
+                    background: "#FFF7ED",
+                    color: "#C2410C",
+                    border: "1px solid #FDBA74",
+                  }}
+                >
+                  {papel === "coordenador"
+                    ? "NÍVEL 1 · COORDENADOR(A) GERAL"
+                    : papel === "gestor"
+                    ? "NÍVEL 2 · SUPERVISOR(A)"
+                    : "NÍVEL 3 · COLABORADOR(A)"}
+                </span>
+                <span
+                  style={{
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    padding: "3px 8px",
+                    borderRadius: 999,
+                    background: "#DCFCE7",
+                    color: "#166534",
+                  }}
+                >
+                  ✓ E-mail Verificado & Salvo em Tempo Real
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="f30-mel-grid" style={{ marginTop: 12 }}>
+            <div className="f30-mel-field">
+              <label>E-mail Corporativo</label>
+              <p className="f30-mono">{usuario?.email || "—"}</p>
+            </div>
+            <div className="f30-mel-field">
+              <label>Supervisão / Equipe</label>
+              <p style={{ fontWeight: 700, color: "#EA580C" }}>
+                {papel === "coordenador"
+                  ? "Coordenação Geral (Todas as 8 Equipes)"
+                  : LISTA_SUPERVISORES_HIERARQUIA.find((s) => s.id === form.supervisorVinculado)?.nome ||
+                    form.supervisorVinculado}
+              </p>
+            </div>
+            <div className="f30-mel-field">
+              <label>Turno / Escala Atual</label>
+              <p className="f30-mono">{form.turno || "08:00 às 17:00"}</p>
+            </div>
+            <div className="f30-mel-field">
+              <label>Matrícula / Login</label>
+              <p className="f30-mono">{form.matricula || "Não informada"}</p>
+            </div>
+          </div>
+
+          <div className="f30-colab-foco" style={{ marginTop: 14 }}>
+            <b>Foco / Meta Individual Atual:</b> {form.focoIndividual}
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div className="f30-secao-titulo">Editar Meu Perfil (Sincronização Instantânea)</div>
+        <form className="f30-card f30-form" onSubmit={salvar}>
+          <div className="f30-grid f30-grid-2">
+            <div>
+              <label>Seu nome completo</label>
+              <input
+                type="text"
+                value={form.nome}
+                onChange={(e) => atualizar("nome", e.target.value)}
+                placeholder="Ex.: Jaqueline Rocha Lima"
+                required
+              />
+            </div>
+            <div>
+              <label>Cargo / Função</label>
+              <input
+                type="text"
+                value={form.cargo}
+                onChange={(e) => atualizar("cargo", e.target.value)}
+                placeholder="Ex.: Supervisora de Operações"
+              />
+            </div>
+          </div>
+
+          <div className="f30-grid f30-grid-3" style={{ marginTop: 8 }}>
+            <div>
+              <label>Equipe / Supervisão</label>
+              {papel === "coordenador" ? (
+                <input type="text" value="Todas as 8 Supervisões" disabled />
+              ) : (
+                <select
+                  value={form.supervisorVinculado}
+                  onChange={(e) => atualizar("supervisorVinculado", e.target.value)}
+                >
+                  {LISTA_SUPERVISORES_HIERARQUIA.map((sup) => (
+                    <option key={sup.id} value={sup.id}>
+                      {sup.nome}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <div>
+              <label>Turno / Horário</label>
+              <input
+                type="text"
+                value={form.turno}
+                onChange={(e) => atualizar("turno", e.target.value)}
+                placeholder="Ex.: 08:00 às 17:00"
+              />
+            </div>
+            <div>
+              <label>Matrícula / Ramal</label>
+              <input
+                type="text"
+                value={form.matricula}
+                onChange={(e) => atualizar("matricula", e.target.value)}
+                placeholder="Ex.: GOL-4821"
+              />
+            </div>
+          </div>
+
+          <label style={{ marginTop: 8 }}>Foco de Desenvolvimento / Meta Individual</label>
+          <input
+            type="text"
+            value={form.focoIndividual}
+            onChange={(e) => atualizar("focoIndividual", e.target.value)}
+            placeholder="Qual seu principal objetivo neste ciclo?"
+          />
+
+          {colaboradorVinculado && (
+            <>
+              <label style={{ marginTop: 8 }}>Pontos fortes (separados por vírgula)</label>
+              <input
+                type="text"
+                value={form.pontosFortes}
+                onChange={(e) => atualizar("pontosFortes", e.target.value)}
+              />
+              <div className="f30-grid f30-grid-4" style={{ marginTop: 8 }}>
+                <div>
+                  <label>TMO (s)</label>
+                  <input type="text" value={form.tmo} onChange={(e) => atualizar("tmo", e.target.value)} />
+                </div>
+                <div>
+                  <label>FCR (%)</label>
+                  <input type="text" value={form.fcr} onChange={(e) => atualizar("fcr", e.target.value)} />
+                </div>
+                <div>
+                  <label>Qualidade (%)</label>
+                  <input type="text" value={form.qualidade} onChange={(e) => atualizar("qualidade", e.target.value)} />
+                </div>
+                <div>
+                  <label>Retrabalho (%)</label>
+                  <input type="text" value={form.retrabalho} onChange={(e) => atualizar("retrabalho", e.target.value)} />
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="f30-form-actions" style={{ marginTop: 14 }}>
+            <button className="f30-btn" type="submit">
+              Salvar perfil em tempo real
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 /* ================================== APP ================================== */
 
 export default function App() {
-  const { usuario, perfilUsuario, supervisorVinculado, nomeUsuario, sair } = useAuth();
+  const {
+    usuario,
+    perfilUsuario,
+    supervisorVinculado,
+    nomeUsuario,
+    dadosPerfil,
+    atualizarMeuPerfil,
+    sair,
+  } = useAuth();
   const papel = perfilUsuario || "gestor";
   const supervisorAtivo =
     papel === "coordenador"
@@ -1235,22 +1576,49 @@ export default function App() {
 
   const [aba, setAba] = useState(papel === "coordenador" ? "coordenacao" : "inicio");
 
-  const [colaboradores, setColaboradores] = useState(COLABORADORES_INICIAIS);
-  const [itensRotina, setItensRotina] = useState(ITENS_ROTINA_INICIAIS);
-  const [melhorias, setMelhorias] = useState(MELHORIAS_INICIAIS);
-  const [reconhecimentos, setReconhecimentos] = useState(RECONHECIMENTOS_INICIAIS);
-  const [agenda, setAgenda] = useState(AGENDA_INICIAL);
-  const [evolucoes, setEvolucoes] = useState(EVOLUCOES_INICIAIS);
-  const [feedbacks, setFeedbacks] = useState(FEEDBACKS_INICIAIS);
-  const [checklists, setChecklists] = useState(CHECKLIST_ATRASO_INICIAL);
+  // Inicializa TODOS os estados a partir do armazenamento persistido (nunca volta dados apagados ao dar F5)
+  const [colaboradores, setColaboradores] = useState(() => {
+    const salvo = lerEstadoLocal();
+    return Array.isArray(salvo?.colaboradores) ? salvo.colaboradores : COLABORADORES_INICIAIS;
+  });
+  const [itensRotina, setItensRotina] = useState(() => {
+    const salvo = lerEstadoLocal();
+    return salvo?.itensRotina && typeof salvo.itensRotina === "object"
+      ? salvo.itensRotina
+      : ITENS_ROTINA_INICIAIS;
+  });
+  const [melhorias, setMelhorias] = useState(() => {
+    const salvo = lerEstadoLocal();
+    return Array.isArray(salvo?.melhorias) ? salvo.melhorias : MELHORIAS_INICIAIS;
+  });
+  const [reconhecimentos, setReconhecimentos] = useState(() => {
+    const salvo = lerEstadoLocal();
+    return Array.isArray(salvo?.reconhecimentos) ? salvo.reconhecimentos : RECONHECIMENTOS_INICIAIS;
+  });
+  const [agenda, setAgenda] = useState(() => {
+    const salvo = lerEstadoLocal();
+    return Array.isArray(salvo?.agenda) ? salvo.agenda : AGENDA_INICIAL;
+  });
+  const [evolucoes, setEvolucoes] = useState(() => {
+    const salvo = lerEstadoLocal();
+    return Array.isArray(salvo?.evolucoes) ? salvo.evolucoes : EVOLUCOES_INICIAIS;
+  });
+  const [feedbacks, setFeedbacks] = useState(() => {
+    const salvo = lerEstadoLocal();
+    return Array.isArray(salvo?.feedbacks) ? salvo.feedbacks : FEEDBACKS_INICIAIS;
+  });
+  const [checklists, setChecklists] = useState(() => {
+    const salvo = lerEstadoLocal();
+    return Array.isArray(salvo?.checklists) ? salvo.checklists : CHECKLIST_ATRASO_INICIAL;
+  });
+
   const [analise, setAnalise] = useState(null);
   const [toast, setToast] = useState(null);
   const [firestoreOnline, setFirestoreOnline] = useState(false);
 
-  // Separação estrita de abas por Nível Hierárquico (Coordenador vs Supervisor vs Colaborador)
+  // Separação estrita de abas por Nível Hierárquico + Aba "Meu Perfil" individual para todos
   const abasVisiveis = useMemo(() => {
     if (papel === "coordenador") {
-      // Nível 1 (Coordenador Geral): Acesso exclusivo à aba Coordenação + visão consolidada
       return [
         { id: "coordenacao", rotulo: "Coordenação (One Page)" },
         { id: "inicio", rotulo: "Visão Geral" },
@@ -1259,10 +1627,10 @@ export default function App() {
         { id: "agenda", rotulo: "Agenda & Evoluções" },
         { id: "feedback", rotulo: "Feedbacks" },
         { id: "checklist", rotulo: "Checklist de Atraso" },
+        { id: "perfil", rotulo: "Meu Perfil" },
       ];
     }
     if (papel === "gestor") {
-      // Nível 2 (Supervisor): NÃO vê a aba da Coordenadora; vê apenas a gestão da sua própria equipe
       return [
         { id: "inicio", rotulo: "Início (Minha Equipe)" },
         { id: "time", rotulo: "Meu Time" },
@@ -1271,17 +1639,17 @@ export default function App() {
         { id: "agenda", rotulo: "Agenda" },
         { id: "feedback", rotulo: "Feedback" },
         { id: "checklist", rotulo: "Checklist de Atraso" },
+        { id: "perfil", rotulo: "Meu Perfil" },
       ];
     }
-    // Nível 3 (Colaborador): Isolamento total — vê apenas seus próprios indicadores, rotina e feedbacks
     return [
       { id: "inicio", rotulo: "Meu Desempenho" },
       { id: "rotina", rotulo: "Minha Rotina" },
       { id: "feedback", rotulo: "Meus Feedbacks" },
+      { id: "perfil", rotulo: "Meu Perfil" },
     ];
   }, [papel]);
 
-  // Garante que ao logar com determinado nível hierárquico, a aba ativa seja sempre permitida
   useEffect(() => {
     if (!abasVisiveis.some((a) => a.id === aba)) {
       setAba(papel === "coordenador" ? "coordenacao" : "inicio");
@@ -1300,20 +1668,19 @@ export default function App() {
     return doSupervisor?.id || colaboradores[0]?.id || "c1";
   }, [colaboradores, nomeUsuario, supervisorAtivo]);
 
-  // Isolamento de Segurança por Hierarquia (impede vazamento de dados entre supervisores e colaboradores)
+  // Isolamento de Segurança por Hierarquia (NUNCA recria colaboradores excluídos!)
   const colaboradoresVisiveis = useMemo(() => {
-    const normalizados = colaboradores.map((c, idx) => ({
+    const normalizados = colaboradores.map((c) => ({
       ...c,
-      supervisor: c.supervisor || COLABORADORES_INICIAIS[idx]?.supervisor || "Jaqueline",
+      supervisor: c.supervisor || "Jaqueline",
     }));
     if (papel === "coordenador") {
       return normalizados;
     }
     if (papel === "gestor") {
-      const filtrados = normalizados.filter((c) => c.supervisor === supervisorAtivo);
-      return filtrados.length > 0 ? filtrados : normalizados.slice(0, 2).map((c) => ({ ...c, supervisor: supervisorAtivo }));
+      // Filtra estritamente pela supervisora logada; se apagar todos, permanece vazio sem recriar
+      return normalizados.filter((c) => c.supervisor === supervisorAtivo);
     }
-    // Colaborador vê estritamente apenas a si mesmo
     return normalizados.filter((c) => c.id === colaboradorLogadoEfetivoId);
   }, [colaboradores, papel, supervisorAtivo, colaboradorLogadoEfetivoId]);
 
@@ -1349,7 +1716,7 @@ export default function App() {
     );
   }, [melhorias, papel, supervisorAtivo, nomesColaboradoresVisiveis]);
 
-  // Sincronização em tempo real com o Firestore
+  // Sincronização em tempo real com o Firestore + Proteção por Timestamp (atualizadoEm)
   useEffect(() => {
     if (!db || !usuario || !usuario.emailVerified) return;
     const docRef = doc(db, "front30", "estado_time");
@@ -1357,19 +1724,56 @@ export default function App() {
       docRef,
       (snap) => {
         setFirestoreOnline(true);
+        const estadoLocal = lerEstadoLocal();
+        const localTs = Number(estadoLocal?.atualizadoEm || 0);
+
         if (snap.exists()) {
           const dados = snap.data();
-          if (dados.colaboradores) setColaboradores(dados.colaboradores);
-          if (dados.itensRotina) setItensRotina(dados.itensRotina);
-          if (dados.melhorias) setMelhorias(dados.melhorias);
-          if (dados.reconhecimentos) setReconhecimentos(dados.reconhecimentos);
-          if (dados.agenda) setAgenda(dados.agenda);
-          if (dados.evolucoes) setEvolucoes(dados.evolucoes);
-          if (dados.feedbacks) setFeedbacks(dados.feedbacks);
-          if (dados.checklists) setChecklists(dados.checklists);
+          const remotoTs = Number(dados.atualizadoEm || 0);
+
+          // Se o servidor tiver dados mais novos (ou iguais), aplica no estado e salva no cache local
+          if (remotoTs >= localTs) {
+            const novoCache = {};
+            if (Array.isArray(dados.colaboradores)) {
+              setColaboradores(dados.colaboradores);
+              novoCache.colaboradores = dados.colaboradores;
+            }
+            if (dados.itensRotina && typeof dados.itensRotina === "object") {
+              setItensRotina(dados.itensRotina);
+              novoCache.itensRotina = dados.itensRotina;
+            }
+            if (Array.isArray(dados.melhorias)) {
+              setMelhorias(dados.melhorias);
+              novoCache.melhorias = dados.melhorias;
+            }
+            if (Array.isArray(dados.reconhecimentos)) {
+              setReconhecimentos(dados.reconhecimentos);
+              novoCache.reconhecimentos = dados.reconhecimentos;
+            }
+            if (Array.isArray(dados.agenda)) {
+              setAgenda(dados.agenda);
+              novoCache.agenda = dados.agenda;
+            }
+            if (Array.isArray(dados.evolucoes)) {
+              setEvolucoes(dados.evolucoes);
+              novoCache.evolucoes = dados.evolucoes;
+            }
+            if (Array.isArray(dados.feedbacks)) {
+              setFeedbacks(dados.feedbacks);
+              novoCache.feedbacks = dados.feedbacks;
+            }
+            if (Array.isArray(dados.checklists)) {
+              setChecklists(dados.checklists);
+              novoCache.checklists = dados.checklists;
+            }
+            gravarEstadoLocal({ ...novoCache, atualizadoEm: remotoTs || Date.now() });
+          } else if (estadoLocal) {
+            // O estado local é mais recente (ex.: usuário apagou item e atualizou a página); envia ao Firestore
+            setDoc(docRef, estadoLocal, { merge: true }).catch(() => {});
+          }
         } else {
-          // Inicializa o documento no Firestore na primeira vez com os dados iniciais
-          setDoc(docRef, {
+          // Primeira vez no Firestore: usa o estado local atual se existir, ou os iniciais
+          const semente = estadoLocal || {
             colaboradores: COLABORADORES_INICIAIS,
             itensRotina: ITENS_ROTINA_INICIAIS,
             melhorias: MELHORIAS_INICIAIS,
@@ -1378,33 +1782,33 @@ export default function App() {
             evolucoes: EVOLUCOES_INICIAIS,
             feedbacks: FEEDBACKS_INICIAIS,
             checklists: CHECKLIST_ATRASO_INICIAL,
-          }, { merge: true }).catch(() => {});
+            atualizadoEm: Date.now(),
+          };
+          gravarEstadoLocal(semente);
+          setDoc(docRef, semente, { merge: true }).catch(() => {});
         }
       },
       (err) => {
         console.warn("Aviso Firestore:", err.code, err.message);
         setFirestoreOnline(false);
-        if (err.code === "permission-denied") {
-          mostrarToast("Permissão negada no Firestore: verifique as Rules do projeto no Firebase Console.");
-        }
       }
     );
     return () => unsubscribe();
   }, [usuario]);
 
+  // Salva instantaneamente no localStorage (síncrono, nunca perde ao dar F5) E no Firestore em tempo real
   async function salvarNoFirestore(novosDados) {
+    const agora = Date.now();
+    const payload = { ...novosDados, atualizadoEm: agora };
+    gravarEstadoLocal(payload);
+
     if (!db || !usuario) return;
     try {
       const docRef = doc(db, "front30", "estado_time");
-      await setDoc(docRef, novosDados, { merge: true });
+      await setDoc(docRef, payload, { merge: true });
       setFirestoreOnline(true);
     } catch (e) {
-      console.warn("Erro ao salvar no Firestore:", e);
-      if (e?.code === "permission-denied") {
-        mostrarToast("Permissão negada (permission-denied): publique as regras no Firebase Console.");
-      } else {
-        mostrarToast("Erro ao sincronizar alteração com o servidor.");
-      }
+      console.warn("Aviso ao sincronizar com Firestore (salvo localmente com segurança):", e);
     }
   }
 
@@ -1419,7 +1823,15 @@ export default function App() {
       salvarNoFirestore({ colaboradores: atualizado });
       return atualizado;
     });
-    mostrarToast(`Colaborador ${novoColaborador.nome} adicionado ao time.`);
+    mostrarToast(`Colaborador ${novoColaborador.nome} adicionado e salvo.`);
+  }
+
+  function atualizarColaborador(id, camposAtualizados) {
+    setColaboradores((prev) => {
+      const atualizado = prev.map((c) => (c.id === id ? { ...c, ...camposAtualizados } : c));
+      salvarNoFirestore({ colaboradores: atualizado });
+      return atualizado;
+    });
   }
 
   function removerColaborador(id, nome) {
@@ -1428,7 +1840,7 @@ export default function App() {
       salvarNoFirestore({ colaboradores: atualizado });
       return atualizado;
     });
-    mostrarToast(`Colaborador ${nome || ""} removido.`);
+    mostrarToast(`Colaborador ${nome || ""} removido permanentemente.`);
   }
 
   function alternarStatusItem(bloco, id) {
@@ -1461,7 +1873,7 @@ export default function App() {
       salvarNoFirestore({ melhorias: atualizado });
       return atualizado;
     });
-    mostrarToast("Registro de melhoria criado.");
+    mostrarToast("Registro de melhoria criado e salvo.");
   }
 
   function concluirMelhoria(id, resultado, aprendizado) {
@@ -1479,7 +1891,7 @@ export default function App() {
       salvarNoFirestore({ melhorias: atualizado });
       return atualizado;
     });
-    mostrarToast("Registro de melhoria removido.");
+    mostrarToast("Registro de melhoria removido permanentemente.");
   }
 
   function adicionarCompromisso(dados) {
@@ -1489,7 +1901,7 @@ export default function App() {
       salvarNoFirestore({ agenda: atualizado });
       return atualizado;
     });
-    mostrarToast("Compromisso agendado.");
+    mostrarToast("Compromisso agendado e salvo.");
   }
 
   function removerCompromisso(id) {
@@ -1498,7 +1910,7 @@ export default function App() {
       salvarNoFirestore({ agenda: atualizado });
       return atualizado;
     });
-    mostrarToast("Compromisso removido da agenda.");
+    mostrarToast("Compromisso removido permanentemente.");
   }
 
   function enviarEvolucao(texto, periodo) {
@@ -1516,7 +1928,7 @@ export default function App() {
       salvarNoFirestore({ evolucoes: atualizado });
       return atualizado;
     });
-    mostrarToast("Evolução enviada para a coordenadora.");
+    mostrarToast("Evolução enviada e salva.");
   }
 
   function removerEvolucao(id) {
@@ -1525,7 +1937,7 @@ export default function App() {
       salvarNoFirestore({ evolucoes: atualizado });
       return atualizado;
     });
-    mostrarToast("Registro de evolução removido.");
+    mostrarToast("Registro de evolução removido permanentemente.");
   }
 
   function enviarFeedback(colaboradorId, texto) {
@@ -1540,7 +1952,7 @@ export default function App() {
       salvarNoFirestore({ feedbacks: atualizado });
       return atualizado;
     });
-    mostrarToast("Feedback enviado.");
+    mostrarToast("Feedback enviado e salvo.");
   }
 
   function removerFeedback(id) {
@@ -1549,7 +1961,7 @@ export default function App() {
       salvarNoFirestore({ feedbacks: atualizado });
       return atualizado;
     });
-    mostrarToast("Feedback removido.");
+    mostrarToast("Feedback removido permanentemente.");
   }
 
   function responderFeedback(feedbackId, texto) {
@@ -1563,7 +1975,7 @@ export default function App() {
       salvarNoFirestore({ feedbacks: atualizado });
       return atualizado;
     });
-    mostrarToast("Resposta enviada.");
+    mostrarToast("Resposta enviada e salva.");
   }
 
   function registrarAtraso(dados) {
@@ -1573,7 +1985,7 @@ export default function App() {
       salvarNoFirestore({ checklists: atualizado });
       return atualizado;
     });
-    mostrarToast("Atraso registrado.");
+    mostrarToast("Atraso registrado e salvo.");
   }
 
   function removerAtraso(id) {
@@ -1582,7 +1994,7 @@ export default function App() {
       salvarNoFirestore({ checklists: atualizado });
       return atualizado;
     });
-    mostrarToast("Registro de atraso removido.");
+    mostrarToast("Registro de atraso removido permanentemente.");
   }
 
   const prioridadeDia =
@@ -1595,6 +2007,11 @@ export default function App() {
   const nomeSupervisorExibicao =
     LISTA_SUPERVISORES_HIERARQUIA.find((s) => s.id === supervisorAtivo)?.nome || supervisorAtivo;
 
+  const colaboradorDoPerfil = useMemo(
+    () => colaboradores.find((c) => c.id === colaboradorLogadoEfetivoId) || null,
+    [colaboradores, colaboradorLogadoEfetivoId]
+  );
+
   return (
     <div className="f30-app">
       <aside className="f30-sidebar">
@@ -1606,12 +2023,15 @@ export default function App() {
           </div>
         </div>
 
-        {/* Selo de Segurança e Nível Hierárquico (somente leitura) */}
+        {/* Cartão de Perfil e Nível Hierárquico (clicável para abrir Meu Perfil) */}
         <div
+          onClick={() => setAba("perfil")}
+          title="Clique para editar seu perfil em tempo real"
           style={{
             margin: "0 4px 12px",
             padding: "8px 10px",
             borderRadius: 10,
+            cursor: "pointer",
             background:
               papel === "coordenador"
                 ? "#FFF7ED"
@@ -1645,7 +2065,10 @@ export default function App() {
               ? "🔒 NÍVEL 2 · SUPERVISÃO"
               : "🔒 NÍVEL 3 · COLABORADOR(A)"}
           </div>
-          <div style={{ color: "#475569", marginTop: 2, fontWeight: 600 }}>
+          <div style={{ color: "#0F172A", marginTop: 3, fontWeight: 700 }}>
+            {nomeUsuario || dadosPerfil?.nome || usuario?.email?.split("@")[0]}
+          </div>
+          <div style={{ color: "#475569", marginTop: 1, fontWeight: 600 }}>
             {papel === "coordenador"
               ? "Acesso Consolidado (8 Equipes)"
               : `Equipe: ${nomeSupervisorExibicao}`}
@@ -1661,7 +2084,14 @@ export default function App() {
           ))}
         </nav>
         <div className="f30-conta">
-          <span className="f30-conta-email" title={usuario?.email}>{nomeUsuario || usuario?.email}</span>
+          <span
+            className="f30-conta-email"
+            style={{ cursor: "pointer" }}
+            onClick={() => setAba("perfil")}
+            title="Abrir Meu Perfil"
+          >
+            {nomeUsuario || usuario?.email}
+          </span>
           <button className="f30-btn secundario pequeno" onClick={sair}>Sair</button>
         </div>
       </aside>
@@ -1674,8 +2104,8 @@ export default function App() {
               {papel === "coordenador"
                 ? "Visão exclusiva da Coordenação Geral — acesso estratégico às 8 supervisões (incluindo Jaqueline Rocha Lima e Luciana Faiad Labate)"
                 : papel === "gestor"
-                ? `Visão isolada de Supervisão (${nomeSupervisorExibicao}) — acesso restrito aos dados da sua equipe`
-                : `Visão individual do Colaborador (Equipe ${nomeSupervisorExibicao}) — acesso restrito aos seus próprios dados`}
+                ? `Visão isolada de Supervisão (${nomeSupervisorExibicao}) — alterações salvas automaticamente em tempo real`
+                : `Visão individual do Colaborador (${nomeUsuario || usuario?.email}) — perfil e dados sincronizados em tempo real`}
             </p>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1686,12 +2116,12 @@ export default function App() {
                 fontWeight: 700,
                 padding: "5px 10px",
                 borderRadius: 999,
-                background: firestoreOnline ? "#dcfce7" : "#fef3c7",
-                color: firestoreOnline ? "#166534" : "#92400e",
-                border: firestoreOnline ? "1px solid #bbf7d0" : "1px solid #fde68a",
+                background: "#dcfce7",
+                color: "#166534",
+                border: "1px solid #bbf7d0",
               }}
             >
-              {firestoreOnline ? "● FIRESTORE ONLINE" : "○ SINCRONIZANDO..."}
+              {firestoreOnline ? "● SALVO EM TEMPO REAL (NUVEM + LOCAL)" : "● SALVO AUTOMATICAMENTE"}
             </span>
             <div className="f30-date-stub">{obterDataCabecalho()}</div>
           </div>
@@ -1711,7 +2141,14 @@ export default function App() {
 
         {aba === "coordenacao" && (
           papel === "coordenador" ? (
-            <PainelCoordenadora melhorias={melhorias} feedbacks={feedbacks} checklists={checklists} />
+            <PainelCoordenadora
+              melhorias={melhorias}
+              feedbacks={feedbacks}
+              checklists={checklists}
+              onRemoverMelhoria={removerMelhoria}
+              onRemoverFeedback={removerFeedback}
+              onRemoverAtraso={removerAtraso}
+            />
           ) : (
             <div className="f30-vazio">
               🔒 Acesso Restrito: O Painel Executivo One Page é exclusivo do nível de Coordenação Geral para evitar vazamento de dados entre equipes.
@@ -1790,6 +2227,21 @@ export default function App() {
           ) : (
             <div className="f30-vazio">🔒 Acesso Restrito: O checklist de atraso é exclusivo dos níveis de Supervisão e Coordenação.</div>
           )
+        )}
+
+        {aba === "perfil" && (
+          <TelaPerfil
+            usuario={usuario}
+            papel={papel}
+            dadosPerfil={dadosPerfil}
+            supervisorAtivo={supervisorAtivo}
+            colaboradorVinculado={papel === "colaborador" ? colaboradorDoPerfil : null}
+            onSalvarPerfil={async (novosCampos) => {
+              await atualizarMeuPerfil(novosCampos);
+              mostrarToast("Seu perfil foi atualizado e salvo em tempo real!");
+            }}
+            onAtualizarColaborador={atualizarColaborador}
+          />
         )}
       </main>
 

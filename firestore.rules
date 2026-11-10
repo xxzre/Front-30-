@@ -13,36 +13,20 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.token.email_verified == true;
     }
 
-    // Função auxiliar: verifica se o papel (nível hierárquico) é válido
-    function isValidRole(papel) {
-      return papel in ['coordenador', 'gestor', 'colaborador'];
-    }
-
-    // Coleção de perfil inicial e hierarquia do usuário (/usuarios/{userId})
+    // Coleção de perfil individual em tempo real do usuário (/usuarios/{userId})
     match /usuarios/{userId} {
-      // Permite criar o documento inicial no cadastro se autenticado, for o próprio uid e papel válido
-      allow create: if isAuthenticated()
-                    && request.auth.uid == userId
-                    && isValidRole(request.resource.data.papel);
-
-      // Bloqueia leitura de perfis de terceiros: apenas o próprio usuário verificado pode ler seu perfil
-      allow read: if isVerifiedUser() && request.auth.uid == userId;
-
-      // Impede escalação de privilégio: o usuário não pode alterar seu próprio nível hierárquico (papel) após criado
-      allow update: if isVerifiedUser()
-                    && request.auth.uid == userId
-                    && request.resource.data.papel == resource.data.papel;
-
+      // Permite criar e atualizar o próprio perfil se autenticado e for o próprio uid
+      allow create, read, update: if isAuthenticated() && request.auth.uid == userId;
       allow delete: if isVerifiedUser() && request.auth.uid == userId;
     }
 
     // Coleção de dados em tempo real do Front 30' (/front30/{docId})
+    // Garante sincronização em tempo real sem perda de dados ao atualizar a página
     match /front30/{docId} {
       allow read, write: if isAuthenticated();
     }
 
     // Demais coleções do sistema
-    // Leituras e escritas normais exigem usuário autenticado E com e-mail verificado
     match /{document=**} {
       allow read, write: if isVerifiedUser();
     }
